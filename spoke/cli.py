@@ -11,7 +11,7 @@ import time
 
 from . import __version__
 from . import config as config_mod
-from .config import Config, config_path, get_api_key, set_api_key, spoke_home
+from .config import Config, config_path, get_api_key, set_api_key, spoke_cmd, spoke_home
 from .platform_info import CURRENT
 
 
@@ -35,7 +35,7 @@ def cmd_run(args) -> int:
     setup_logging(cfg)
     key, _ = get_api_key()
     if cfg.effective_stt_backend == "groq" and not key:
-        print("No Groq API key found. Run `python -m spoke setup` (or set GROQ_API_KEY).", file=sys.stderr)
+        print(f"No Groq API key found. Run `{spoke_cmd('setup')}` (or set GROQ_API_KEY).", file=sys.stderr)
         return 2
     bad = [c for c in run_checks() if c.ok is False]
     if bad:
@@ -165,7 +165,8 @@ def cmd_setup(args) -> int:
         print("\nMic test:")
         args.seconds, args.force, args.verbose = 3.0, False, False
         cmd_test_mic(args)
-    print("\nDone. Start Spoke with:  python -m spoke")
+    print(f"\nDone. Start Spoke with:  {spoke_cmd()}")
+    print(f"Check everything with:  {spoke_cmd('doctor')}")
     return 0
 
 
@@ -237,7 +238,7 @@ def cmd_doctor(args) -> int:
     key, source = get_api_key()
     needs_cloud = cfg.effective_stt_backend == "groq" or cfg.effective_cleanup
     if not key:
-        _line("FAIL" if needs_cloud else "SKIP", "API key", "missing -- run `python -m spoke setup`")
+        _line("FAIL" if needs_cloud else "SKIP", "API key", f"missing -- run `{spoke_cmd('setup')}`")
         failures += needs_cloud
     else:
         _line("OK", "API key", f"found in {source}")

@@ -24,22 +24,16 @@ def estimate_tokens(text: str) -> int:
 def build_prompt(vocab: list[str], budget: int = PROMPT_TOKEN_BUDGET) -> str:
     """Comma-separated vocab list, truncated (keeping earliest = highest priority) to fit budget.
 
-    A natural-sentence style prompt biases Whisper toward the spellings without making it
-    hallucinate the list itself on silence (silence never reaches the API anyway).
+    No "Vocabulary:" label: Whisper sometimes echoes its prompt on short or unclear audio,
+    and a label word made that echo look like real text ("Vocabulary, Sopabase, T.").
     """
     terms = [t.strip() for t in vocab if t and t.strip()]
-    if not terms:
-        return ""
-    prefix = "Vocabulary:"
     out: list[str] = []
     for term in terms:
-        candidate = prefix + " " + ", ".join(out + [term]) + "."
-        if estimate_tokens(candidate) > budget:
+        if estimate_tokens(", ".join(out + [term]) + ".") > budget:
             break
         out.append(term)
-    if not out:
-        return ""
-    return prefix + " " + ", ".join(out) + "."
+    return ", ".join(out) + "." if out else ""
 
 
 @lru_cache(maxsize=8)
@@ -71,6 +65,16 @@ _PUNCT_TABLE = str.maketrans("", "", string.punctuation + "¡¿…“”‘’«
 
 def _normalize(text: str) -> str:
     return " ".join(text.lower().translate(_PUNCT_TABLE).split())
+
+
+def is_prompt_echo(text: str, vocab: list[str]) -> bool:
+    """True if the transcript is mostly the vocab prompt read back (a Whisper failure mode on
+    short/unclear audio): 3+ words, at least 75% of them vocab words."""
+    words = _normalize(text).split()
+    if len(words) < 3:
+        return False
+    known = {w for term in vocab for w in _normalize(term).split()} | {"vocabulary"}
+    return sum(w in known for w in words) / len(words) >= 0.75
 
 
 def is_hallucination(text: str, blocklist: list[str]) -> bool:

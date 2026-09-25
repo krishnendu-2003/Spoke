@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -19,6 +20,15 @@ log = logging.getLogger(__name__)
 KEYRING_SERVICE = "spoke"
 KEYRING_USER = "groq_api_key"
 ENV_KEY = "GROQ_API_KEY"
+
+
+def spoke_cmd(args: str = "") -> str:
+    """The exact command to run Spoke with THIS interpreter (the venv's python), so hints
+    never point at a system `python` that doesn't have Spoke's dependencies."""
+    exe = sys.executable or "python"
+    if " " in exe:
+        exe = f'"{exe}"'
+    return f"{exe} -m spoke" + (f" {args}" if args else "")
 
 
 def spoke_home() -> Path:
@@ -59,6 +69,9 @@ SEED_REPLACEMENTS = {
     "bullmq": "BullMQ",
     "supabase": "Supabase",
     "super base": "Supabase",
+    "supa base": "Supabase",
+    "sopabase": "Supabase",  # heard on a real Mac test, 2026-09-25
+    "tiger beatle": "TigerBeetle",
     "setu": "Setu",
     "fira": "FIRA",
     "itr 4": "ITR-4",

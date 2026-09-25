@@ -7,10 +7,10 @@ import threading
 
 import numpy as np
 
-from .config import Config
+from .config import Config, spoke_cmd
 from .groq_api import GroqClient, GroqError
 from .recorder import Recording
-from .vocab import build_prompt, is_hallucination
+from .vocab import build_prompt, is_hallucination, is_prompt_echo
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def make_transcriber(cfg: Config, client: GroqClient | None):
     if cfg.effective_stt_backend == "local":
         return LocalTranscriber(cfg)
     if client is None:
-        raise TranscriptionError("No Groq API key. Run `python -m spoke setup` or set GROQ_API_KEY.")
+        raise TranscriptionError(f"No Groq API key. Run `{spoke_cmd('setup')}` or set GROQ_API_KEY.")
     return GroqTranscriber(cfg, client)
 
 
@@ -103,5 +103,8 @@ def filter_hallucination(text: str, cfg: Config) -> str:
     """Return '' if the transcript is a known silence hallucination."""
     if is_hallucination(text, cfg.hallucination_blocklist):
         log.info("dropped likely hallucination (%d chars)", len(text))
+        return ""
+    if is_prompt_echo(text, cfg.vocab):
+        log.info("dropped likely vocab-prompt echo (%d chars)", len(text))
         return ""
     return text

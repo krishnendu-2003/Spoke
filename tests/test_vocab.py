@@ -6,6 +6,7 @@ from spoke.vocab import (
     build_prompt,
     estimate_tokens,
     is_hallucination,
+    is_prompt_echo,
 )
 
 R = SEED_REPLACEMENTS
@@ -44,7 +45,8 @@ def test_replacement_value_with_backslash_is_literal():
 
 def test_prompt_contains_vocab_and_fits_limit():
     p = build_prompt(SEED_VOCAB)
-    assert p.startswith("Vocabulary:")
+    assert p.startswith("Lumeo, TigerBeetle")
+    assert "Vocabulary" not in p  # a label word gets echoed back by Whisper
     for term in SEED_VOCAB:
         assert term in p
     assert estimate_tokens(p) <= PROMPT_TOKEN_BUDGET < WHISPER_PROMPT_TOKEN_LIMIT
@@ -77,3 +79,19 @@ def test_real_speech_kept():
 
 def test_bad_regex_in_blocklist_does_not_crash():
     assert not is_hallucination("hello", ["re:(unclosed"])
+
+
+def test_seen_mishearings_fixed():
+    assert apply_replacements("push it to Sopabase", R) == "push it to Supabase"
+    assert apply_replacements("tiger beatle ledger", R) == "TigerBeetle ledger"
+
+
+def test_prompt_echo_detected():
+    assert is_prompt_echo("Lumeo, TigerBeetle, Soroban, Stellar.", SEED_VOCAB)
+    assert is_prompt_echo("Vocabulary: Lumeo, TigerBeetle, NestJS", SEED_VOCAB)
+
+
+def test_real_sentences_with_vocab_are_not_echo():
+    assert not is_prompt_echo("We store every balance in TigerBeetle.", SEED_VOCAB)
+    assert not is_prompt_echo("Deploy Lumeo", SEED_VOCAB)  # too short to judge
+    assert not is_prompt_echo("Prisma and NestJS talk to Supabase from the API layer", SEED_VOCAB)
