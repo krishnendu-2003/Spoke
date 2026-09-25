@@ -244,13 +244,13 @@ def cmd_doctor(args) -> int:
         failures += needs_cloud
     else:
         _line("OK", "API key", f"found in {source}")
-        failures += _doctor_groq(cfg, key)
+        failures += _doctor_groq(cfg, key, bench=getattr(args, "bench", False))
 
     print(f"\n{'All checks passed.' if not failures else f'{failures} problem(s) found.'}")
     return 1 if failures else 0
 
 
-def _doctor_groq(cfg: Config, key: str) -> int:
+def _doctor_groq(cfg: Config, key: str, bench: bool = False) -> int:
     import numpy as np
 
     from . import cleanup as cleanup_mod
@@ -295,9 +295,10 @@ def _doctor_groq(cfg: Config, key: str) -> int:
     noise = (rng.standard_normal(16000 * 2) * 300).astype(np.int16)
     try:
         t0 = time.perf_counter()
-        client.transcribe(Recording(noise).to_wav(), model=cfg.stt_model, language="en",
+        audio, fname, mime = Recording(noise).to_upload(cfg.upload_format)
+        client.transcribe(audio, filename=fname, mime=mime, model=cfg.stt_model, language="en",
                           prompt="", timeout=cfg.stt_timeout_seconds)
-        _line("OK", "STT round trip", f"{(time.perf_counter() - t0) * 1000:.0f} ms for 2 s of audio")
+        _line("OK", "STT round trip", f"{(time.perf_counter() - t0) * 1000:.0f} ms for 2 s of audio ({fname})")
     except GroqError as e:
         _line("FAIL", "STT round trip", str(e))
         failures += 1
@@ -319,7 +320,32 @@ def _doctor_groq(cfg: Config, key: str) -> int:
             print("         over budget: dictation would fall back to raw text. Try another model or raise "
                   "cleanup_timeout_seconds.")
         failures += not (ok and within)
+    if bench:
+        _bench_cleanup(cfg, client, models)
     return failures
+
+
+def _bench_cleanup(cfg: Config, client, models: list[str]) -> None:
+    """Time every preferred cleanup model this key can use; recommend the fastest that works."""
+    from . import cleanup as cleanup_mod
+
+    sample = "um so the deploy is at 5 no 6 tomorrow and uh ping me on slack you know"
+    print("\nCleanup model benchmark (5 calls each, same prompt Spoke uses)")
+    results = []
+    for m in [m for m in cleanup_mod.PREFERRED_CLEANUP_MODELS if m in models]:
+        times, statuses, out = [], [], ""
+        for _ in range(5):
+            t0 = time.perf_counter()
+            out, status = cleanup_mod.clean(sample, client, model=m, timeout=5.0)
+            times.append((time.perf_counter() - t0) * 1000)
+            statuses.append(status)
+        ok = all(s == "ok" for s in statuses)
+        med = statistics.median(times[1:])  # first call can include warm-up
+        results.append((med, m, ok))
+        _line("OK" if ok else "FAIL", m, f"median {med:.0f} ms -> {out!r}")
+    good = sorted(r for r in results if r[2])
+    if good:
+        print(f"  fastest: {good[0][1]} ({good[0][0]:.0f} ms). To use it: cleanup_model = \"{good[0][1]}\"")
 
 
 # --- entry ---------------------------------------------------------------------------------
@@ -347,6 +373,7 @@ def main(argv: list[str] | None = None) -> int:
     h.set_defaults(func=cmd_history)
 
     d = sub.add_parser("doctor", help="check deps, permissions, key, Groq reachability, latency")
+    d.add_argument("--bench", action="store_true", help="also time every cleanup model your key can use")
     d.set_defaults(func=cmd_doctor)
 
     args = p.parse_args(argv)

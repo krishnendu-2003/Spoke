@@ -36,9 +36,12 @@ class GroqTranscriber:
     def transcribe(self, rec: Recording) -> str:
         # Scale timeout with length: a 5-minute upload needs more than 10 s on a slow uplink.
         timeout = self.cfg.stt_timeout_seconds + rec.duration / 10
+        audio, filename, mime = rec.to_upload(self.cfg.upload_format)
         try:
             return self.client.transcribe(
-                rec.to_wav(),
+                audio,
+                filename=filename,
+                mime=mime,
                 model=self.cfg.stt_model,
                 language=_language(self.cfg),
                 prompt=self.prompt,

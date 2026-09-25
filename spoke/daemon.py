@@ -134,6 +134,7 @@ class Pipeline:
             enabled=self.cfg.effective_cleanup and self.cleanup_model is not None,
             min_words=self.cfg.cleanup_min_words,
             timeout=self.cfg.cleanup_timeout_seconds,
+            mode=self.cfg.cleanup_mode,
         )
         info["cleanup_ms"] = (time.perf_counter() - t1) * 1000
         info["cleanup"] = status
@@ -307,8 +308,10 @@ class Daemon:
         threading.Thread(target=self._worker, name="spoke-worker", daemon=True).start()
         self.recorder.warm()
         if self.client:
-            # Also opens the TLS connection, so the first dictation starts warm.
+            # Also opens the TLS connection, so the first dictation starts warm; the
+            # keepalive then stops it going cold between dictations.
             threading.Thread(target=self.pipeline.resolve_cleanup_model, daemon=True).start()
+            self.client.start_keepalive()
         mode = "hold the key" if self.cfg.mode == "hold" else "double-tap the key to start, tap to stop"
         log.info("Spoke running on %s: %s (%s). Ctrl+C to quit.", CURRENT.describe(), self.cfg.hotkey, mode)
 

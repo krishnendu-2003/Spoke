@@ -153,6 +153,46 @@ def looks_unfaithful(raw: str, cleaned: str) -> bool:
     return False
 
 
+# --- smart mode: skip the LLM round trip when a regex can do the job safely ---------------
+
+# Pure hesitation sounds: always safe to delete.
+_HES = r"(?:u+m+|u+h+m*|e+r+m*|a+h+|h+m+|m+h*m+)"
+_HESITATION = re.compile(r"(?i)(?<![\w'])" + _HES + r"(?![\w'])[,.…]*\s*")
+# ", uh," between two clauses: drop it with both commas ("should, uh, ship" -> "should ship")
+_HESITATION_COMMAS = re.compile(r"(?i),\s*" + _HES + r"(?![\w'])[,…]*(?=\s)")
+# Things only the LLM can judge: self-corrections, ambiguous fillers, stutters.
+_NEEDS_LLM = re.compile(
+    r"(?i)\b(?:no|nope|sorry|wait|actually|scratch that|i mean|i meant|or rather|rather|"
+    r"you know|like|sort of|kind of|basically|literally|so yeah|yeah so)\b"
+    r"|\b(\w+)\s+\1\b"  # repeated word: "the the"
+)
+
+
+def needs_llm(text: str) -> bool:
+    """True if the transcript has anything beyond plain hesitations that needs judgement.
+    Non-ASCII letters (Hindi/Bengali script) always go to the LLM: the local rules are
+    English-only."""
+    if any(ord(c) > 127 and c.isalpha() for c in text):
+        return True
+    return bool(_NEEDS_LLM.search(_HESITATION.sub(" ", text)))
+
+
+def local_clean(text: str) -> str:
+    """Strip hesitations and tidy what's left. Whisper already punctuates and capitalises."""
+    out = _HESITATION_COMMAS.sub("", text)
+    out = _HESITATION.sub("", out)
+    out = re.sub(r"\s+([,.;:!?])", r"\1", out)  # "word ," -> "word,"
+    out = re.sub(r"([,;:])(?:\s*[,;:])+", r"\1", out)  # ", ," -> ","
+    out = re.sub(r"^[\s,;:.]+", "", out)  # leading ", " left by a removed "Um,"
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    # "...is in, uh." -> "...is in," -> "...is in."
+    end = re.search(r"[.!?]+$", text.strip())
+    out = re.sub(r"[\s,;:]+$", end.group(0) if end else "", out)
+    if out and out[0].islower():
+        out = out[0].upper() + out[1:]
+    return out
+
+
 def word_count(text: str) -> int:
     return len(text.split())
 
@@ -165,14 +205,18 @@ def clean(
     enabled: bool = True,
     min_words: int = 4,
     timeout: float = 1.0,
+    mode: str = "always",
 ) -> tuple[str, str]:
-    """Return (text, status). status is one of: skipped-disabled, skipped-short, ok,
+    """Return (text, status). status is one of: skipped-disabled, skipped-short, local
+    (smart mode: hesitations stripped without an LLM call), ok,
     fallback-error, fallback-model-error (model missing/rejected: caller should re-pick),
     fallback-unfaithful. On any fallback the raw text is returned."""
     if not enabled or client is None:
         return text, "skipped-disabled"
     if word_count(text) < min_words:
         return text, "skipped-short"
+    if mode == "smart" and not needs_llm(text):
+        return local_clean(text) or text, "local"
     extra = reasoning_params(model)
     try:
         out = client.chat(

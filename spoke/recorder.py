@@ -38,6 +38,16 @@ class Recording:
     def to_wav(self) -> bytes:
         return encode_wav(self.samples, self.sample_rate)
 
+    def to_upload(self, fmt: str = "flac") -> tuple[bytes, str, str]:
+        """(bytes, filename, mime) for the STT upload. FLAC is lossless and ~1/3 smaller
+        than WAV for speech (less upload time on a slow uplink); falls back to WAV."""
+        if fmt == "flac":
+            try:
+                return encode_flac(self.samples, self.sample_rate), "audio.flac", "audio/flac"
+            except Exception as e:  # soundfile/libsndfile missing or broken
+                log.debug("FLAC encode unavailable (%s); sending WAV", e)
+        return self.to_wav(), "audio.wav", "audio/wav"
+
 
 def rms(samples: np.ndarray) -> float:
     if samples.size == 0:
@@ -55,6 +65,14 @@ def encode_wav(samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
         w.setsampwidth(2)
         w.setframerate(sample_rate)
         w.writeframes(samples.astype("<i2", copy=False).tobytes())
+    return buf.getvalue()
+
+
+def encode_flac(samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
+    import soundfile as sf
+
+    buf = io.BytesIO()
+    sf.write(buf, samples.astype(np.int16, copy=False), sample_rate, format="FLAC", subtype="PCM_16")
     return buf.getvalue()
 
 

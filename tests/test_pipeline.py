@@ -95,7 +95,7 @@ def test_cleanup_failure_pastes_raw_with_replacements(tmp_path, no_app):
         def chat(self, **kw):
             raise TimeoutError()
 
-    p, inj = make(tmp_path, Broken("deploy the next js app to vercel today please"))
+    p, inj = make(tmp_path, Broken("deploy the next js app to vercel today please"), cleanup_mode="always")
     p.process(speech(), 0)
     assert inj.injected == ["deploy the Next.js app to vercel today please"]
 

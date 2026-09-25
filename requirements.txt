@@ -5,6 +5,8 @@ sounddevice==0.5.6
 numpy==2.4.6; python_version < "3.12"
 numpy==2.5.3; python_version >= "3.12"
 httpx==0.28.1
+# FLAC upload: lossless, ~1/3 smaller than WAV, ~2 ms to encode 10 s (libsndfile ships in the wheel).
+soundfile==0.14.0
 keyring==25.7.0
 pystray==0.19.5
 Pillow==12.3.0

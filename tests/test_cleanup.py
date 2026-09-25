@@ -168,3 +168,44 @@ def test_pick_prefers_llama_instant_when_available():
 def test_pick_unknown_catalog_uses_any_chat_model_never_whisper():
     assert cleanup.pick_cleanup_model("auto", ["whisper-large-v3", "some/new-model"]) == "some/new-model"
     assert cleanup.pick_cleanup_model("auto", ["whisper-large-v3"]) is None
+
+
+# --- smart mode ----------------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw,expected", [
+    ("Um, we should ship the ledger migration today.", "We should ship the ledger migration today."),
+    ("We should, uh, ship the ledger migration today.", "We should ship the ledger migration today."),
+    ("So the build is green and uhm the deploy is queued.", "So the build is green and the deploy is queued."),
+    ("Hmm. Let's merge it after lunch then.", "Let's merge it after lunch then."),
+    ("The fix, um, is in the branch, uh.", "The fix is in the branch."),
+])
+def test_smart_mode_strips_hesitations_locally_without_llm(raw, expected):
+    llm = FakeLLM("SHOULD NOT BE CALLED")
+    assert cleanup.clean(raw, llm, model="m", mode="smart") == (expected, "local")
+    assert llm.calls == []
+
+
+@pytest.mark.parametrize("raw", [
+    "The meeting is at 5, no, 6 on Thursday.",
+    "Send it to Priya, sorry, Rahul before lunch.",
+    "We should, you know, just ship the thing today.",
+    "It was like really slow on the staging box.",
+    "Push the the migration to staging now.",
+    "I mean we could also just roll back the change.",
+    "Kal deploy karo aur मुझे ping करो on Slack.",
+])
+def test_smart_mode_sends_judgement_calls_to_llm(raw):
+    llm = FakeLLM(raw)
+    _, status = cleanup.clean(raw, llm, model="m", mode="smart")
+    assert status == "ok" and len(llm.calls) == 1
+
+
+def test_smart_mode_leaves_words_containing_filler_letters_alone():
+    raw = "The umbrella team hummed about the Uhlmann ermine report."
+    assert cleanup.clean(raw, FakeLLM("x"), model="m", mode="smart") == (raw, "local")
+
+
+def test_always_mode_calls_llm_even_for_clean_text():
+    llm = FakeLLM("We should ship the ledger migration today.")
+    cleanup.clean("We should ship the ledger migration today.", llm, model="m", mode="always")
+    assert len(llm.calls) == 1

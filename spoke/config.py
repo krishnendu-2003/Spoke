@@ -117,6 +117,7 @@ class Config:
     stt_backend: str = "groq"
     stt_model: str = "whisper-large-v3-turbo"
     stt_timeout_seconds: float = 10.0
+    upload_format: str = "flac"
     local_only: bool = False
     local_model_size: str = "base"
     cleanup: bool = True
@@ -125,6 +126,7 @@ class Config:
     cleanup_model: str = "auto"
     cleanup_timeout_seconds: float = 1.0
     cleanup_min_words: int = 4
+    cleanup_mode: str = "smart"
     sounds: bool = True
     notifications: bool = True
     tray: bool = True
@@ -161,6 +163,10 @@ class Config:
             problems.append(f"mode must be 'hold' or 'toggle', got {self.mode!r}")
         if self.stt_backend not in ("groq", "local"):
             problems.append(f"stt_backend must be 'groq' or 'local', got {self.stt_backend!r}")
+        if self.cleanup_mode not in ("smart", "always"):
+            problems.append(f"cleanup_mode must be 'smart' or 'always', got {self.cleanup_mode!r}")
+        if self.upload_format not in ("flac", "wav"):
+            problems.append(f"upload_format must be 'flac' or 'wav', got {self.upload_format!r}")
         if self.paste_method not in ("clipboard", "type"):
             problems.append(f"paste_method must be 'clipboard' or 'type', got {self.paste_method!r}")
         if self.max_seconds <= 0:
@@ -202,6 +208,8 @@ language = "en"
 stt_backend = "groq"
 stt_model = "whisper-large-v3-turbo"
 stt_timeout_seconds = 10.0
+# "flac" (lossless, ~1/3 smaller upload) or "wav".
+upload_format = "flac"
 # true = audio never leaves this machine: forces stt_backend = "local" and disables cleanup.
 local_only = false
 # faster-whisper model: tiny, base, small, medium, large-v3. "base" is the fast CPU default.
@@ -217,8 +225,14 @@ cleanup = true
 cleanup_model = "{d.cleanup_model}"
 # Cleanup slower than this falls back to the raw transcript.
 cleanup_timeout_seconds = 1.0
-# Utterances shorter than this many words skip cleanup (saves ~200 ms).
+# Utterances shorter than this many words skip cleanup (saves a round trip).
 cleanup_min_words = 4
+# "smart"  = only call the LLM when the transcript has something a regex can't fix safely
+#            (self-corrections like "5, no, 6", "you know", "I mean", repeated words, or
+#            non-English text). Plain "um"/"uh" are stripped locally. Saves a whole Groq
+#            round trip on most utterances.
+# "always" = send every utterance (>= cleanup_min_words) through the LLM.
+cleanup_mode = "smart"
 
 # --- Recording ----------------------------------------------------------------------------
 sounds = true

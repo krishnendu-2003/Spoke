@@ -44,3 +44,20 @@ def test_history_disabled_writes_nothing(tmp_path):
     h = History(tmp_path / "h.jsonl", enabled=False)
     h.append(text="secret")
     assert not (tmp_path / "h.jsonl").exists()
+
+
+def test_flac_upload_is_lossless_and_smaller():
+    import soundfile as sf
+
+    rng = np.random.default_rng(0)
+    x = ((np.sin(np.arange(32000) / 7) * 2000) + rng.normal(0, 80, 32000)).astype(np.int16)
+    data, name, mime = Recording(x).to_upload("flac")
+    assert (name, mime) == ("audio.flac", "audio/flac")
+    assert len(data) < len(Recording(x).to_wav()) * 0.8
+    back, sr = sf.read(io.BytesIO(data), dtype="int16")
+    assert sr == 16000 and np.array_equal(back, x)
+
+
+def test_wav_upload_option():
+    data, name, mime = Recording(np.zeros(1600, dtype=np.int16)).to_upload("wav")
+    assert name == "audio.wav" and data[:4] == b"RIFF"

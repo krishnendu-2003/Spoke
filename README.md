@@ -93,12 +93,14 @@ The file is created with comments on first run. Restart Spoke after editing.
 | `stt_backend` | `"groq"` | `groq` or `local` (faster-whisper) |
 | `stt_model` | `"whisper-large-v3-turbo"` | |
 | `stt_timeout_seconds` | `10.0` | plus 1 s per 10 s of audio; one retry on timeout/5xx/429 |
+| `upload_format` | `"flac"` | `flac` (lossless, ~1/3 smaller) or `wav` |
 | `local_only` | `false` | forces local STT **and** disables cloud cleanup |
 | `local_model_size` | `"base"` | `tiny`/`base`/`small`/`medium`/`large-v3` |
 | `cleanup` | `true` | LLM cleanup pass |
 | `cleanup_model` | `"auto"` | fastest model your key can use; a named model that isn't available falls back automatically |
 | `cleanup_timeout_seconds` | `1.0` | slower means the raw transcript is used |
 | `cleanup_min_words` | `4` | shorter utterances skip cleanup |
+| `cleanup_mode` | `"smart"` | `smart` calls the LLM only when the text needs judgement (self-corrections, "you know", repeats, non-English) and strips plain "um/uh" locally; `always` sends everything |
 | `sounds` | `true` | start/stop/error cues |
 | `notifications` | `true` | desktop notifications for errors/auto-stop |
 | `tray` | `true` | tray icon (grey idle / red recording / amber processing) |
@@ -126,9 +128,11 @@ The API key is **never** in this file. It is read from the OS keychain (service 
 
 Each assumption made without asking, with its trade-off:
 
-1. **WAV, not FLAC, for upload.** Encoding costs nothing and Groq's docs recommend WAV for latency. 5 min of 16 kHz mono is about 9.6 MB, under the 25 MB free-tier limit. Trade-off: a larger upload than FLAC (about 2×) on slow links.
+1. **FLAC for upload.** It is lossless, so accuracy is unchanged, and about a third smaller than WAV for real speech. Encoding 10 s takes about 2 ms. Upload time matters on a home uplink. Opus would be smaller still, but it took 120–280 ms to encode 10 s, which costs more than it saves. `upload_format = "wav"` is the fallback.
 2. **Cleanup model is picked from what your key can use.** `cleanup_model = "auto"` tries `llama-3.1-8b-instant`, then `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`, `qwen/qwen3-32b`, `llama-3.3-70b-versatile` and `openai/gpt-oss-120b`, in that order. A named model that isn't available (or that Groq rejects mid-session) falls back to the same list rather than failing on every utterance. Model access varies by key: on one real key `llama-3.1-8b-instant` returned 404. Reasoning models are called with thinking turned down and hidden, following Groq's reasoning docs as of 2026-09-25: gpt-oss gets `reasoning_effort: "low"` and `include_reasoning: false`, and qwen3 gets `reasoning_effort: "none"` and `reasoning_format: "hidden"`. Spoke only ever reads `message.content`, and strips any inline `<think>` block. `doctor` times three cleanup calls against the 1 s budget.
-3. **Warm TLS on key-down.** A persistent HTTP client (120 s keep-alive) pre-opens the Groq connection while you are still talking, which takes 100–300 ms of handshake out of the post-release path.
+3. **The Groq connection never goes cold.** A background keep-alive (one tiny `GET /models` after 20 s idle) holds the TLS connection open. A real Mac test showed a 3.7 s cold connect versus about 330 ms warm.
+3b. **Smart cleanup.** Whisper already punctuates and capitalises, so most utterances only need "um"/"uh" removed. Spoke does that locally and skips the second Groq round trip. The LLM is still called for anything that needs judgement. `cleanup_mode = "always"` restores the old behaviour.
+3c. **Warm TLS on key-down.** A persistent HTTP client (120 s keep-alive) pre-opens the Groq connection while you are still talking, which takes 100–300 ms of handshake out of the post-release path.
 4. **Cleanup safety net.** Besides the strict prompt, the transcript is wrapped in `<transcript>` tags as data, and few-shot examples show a question being cleaned, not answered. If the output is much longer than the input (it answered) or much shorter (it summarised), Spoke pastes the raw transcript instead.
 5. **"Trailing space" means a separator space before the next paste.** When you dictate into the same app within 30 s, the new text starts with a space. The result is the same as a trailing space, but a single dictation never leaves a dangling space. The rule is skipped if the text starts with punctuation.
 6. **Hold-mode chord cancel.** Right Ctrl is also a real modifier, so pressing another key while holding it cancels the recording. Otherwise every Right-Ctrl shortcut would start a dictation.

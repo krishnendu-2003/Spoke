@@ -36,8 +36,10 @@ class GroqClient:
         )
         self._last_used = 0.0
         self._warm_lock = threading.Lock()
+        self._closed = False
 
     def close(self) -> None:
+        self._closed = True
         self._client.close()
 
     def warm(self) -> None:
@@ -59,6 +61,23 @@ class GroqClient:
                 self._warm_lock.release()
 
         threading.Thread(target=_run, daemon=True).start()
+
+    def start_keepalive(self, interval: float = 20.0) -> None:
+        """Keep the TLS connection open while idle, so no dictation pays a fresh
+        TCP+TLS handshake to Groq (hundreds of ms from India, seconds on a bad route).
+        One tiny GET /models every `interval` s of idleness."""
+
+        def _loop():
+            while not self._closed:
+                time.sleep(interval / 2)
+                if time.monotonic() - self._last_used >= interval:
+                    try:
+                        self._client.get("/models", timeout=5.0)
+                        self._last_used = time.monotonic()
+                    except Exception as e:
+                        log.debug("keepalive failed: %s", type(e).__name__)
+
+        threading.Thread(target=_loop, name="groq-keepalive", daemon=True).start()
 
     def _post(self, path: str, *, timeout: float, retries: int, **kwargs) -> dict:
         attempt = 0
@@ -89,13 +108,15 @@ class GroqClient:
         prompt: str,
         timeout: float,
         retries: int = 1,
+        filename: str = "audio.wav",
+        mime: str = "audio/wav",
     ) -> str:
         data = {"model": model, "response_format": "json", "temperature": "0"}
         if language:
             data["language"] = language
         if prompt:
             data["prompt"] = prompt
-        files = {"file": ("audio.wav", wav, "audio/wav")}
+        files = {"file": (filename, wav, mime)}
         body = self._post("/audio/transcriptions", data=data, files=files, timeout=timeout, retries=retries)
         return str(body.get("text", "")).strip()
 
