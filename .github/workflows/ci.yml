@@ -1,0 +1,36 @@
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Linux system deps (PortAudio, X11 clipboard/keys, virtual display)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 xvfb xclip xdotool
+      - name: Install
+        run: python -m pip install -r requirements-dev.txt
+      - name: Unit tests
+        if: runner.os != 'Linux'
+        run: python -m pytest -q
+        env:
+          SPOKE_NATIVE_TESTS: "1"   # real clipboard round-trip on macOS / Windows
+      - name: Unit tests (under Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env XDG_SESSION_TYPE=x11 SPOKE_NATIVE_TESTS=1 python -m pytest -q
+      - name: Doctor (informational; no key, mic or permissions on CI)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a env XDG_SESSION_TYPE=x11 python -m spoke doctor || true
+          else python -m spoke doctor || true; fi

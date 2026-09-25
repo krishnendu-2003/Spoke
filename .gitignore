@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+debug_audio/
+
+# macOS Finder metadata
+.DS_Store
