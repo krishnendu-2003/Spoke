@@ -135,6 +135,9 @@ class Config:
     silence_rms_threshold: float = 150.0
     keep_mic_open: bool = False
     input_device: str = ""
+    noise_suppression: bool = False
+    voice_lock: bool = False
+    voice_lock_threshold: float = 0.0
     paste_method: str = "clipboard"
     paste_restore_delay_ms: int = 150
     trailing_space: bool = True
@@ -169,6 +172,8 @@ class Config:
             problems.append(f"upload_format must be 'flac' or 'wav', got {self.upload_format!r}")
         if self.paste_method not in ("clipboard", "type"):
             problems.append(f"paste_method must be 'clipboard' or 'type', got {self.paste_method!r}")
+        if not 0.0 <= self.voice_lock_threshold < 1.0:
+            problems.append("voice_lock_threshold must be 0 (auto) or between 0 and 1")
         if self.max_seconds <= 0:
             problems.append("max_seconds must be > 0")
         if self.log_level.upper() not in ("DEBUG", "INFO", "WARNING", "ERROR"):
@@ -251,6 +256,17 @@ silence_rms_threshold = {d.silence_rms_threshold}
 keep_mic_open = false
 # Input device name or index as a string; "" = system default.
 input_device = ""
+
+# --- Voice lock & noise suppression (on-device) ----------------------------------------------
+# Run `python -m spoke enroll` once: it downloads the on-device models (~41 MB), records a few
+# sentences, saves your voiceprint to ~/.spoke/voiceprint.json and turns both of these on.
+# true = remove background noise on this machine before sending audio to STT.
+noise_suppression = {str(d.noise_suppression).lower()}
+# true = only speech that matches your voiceprint is sent; other voices are cut out.
+voice_lock = {str(d.voice_lock).lower()}
+# 0 = use the threshold calibrated at enrollment. Raise (e.g. 0.6) if other voices get
+# through, lower (e.g. 0.45) if your own words get cut. `test-mic` prints the scores.
+voice_lock_threshold = {d.voice_lock_threshold}
 
 # --- Pasting ------------------------------------------------------------------------------
 # "clipboard" = save clipboard, paste, restore (fast, default).
@@ -341,6 +357,34 @@ def load(path: Path | None = None, create: bool = True) -> Config:
     if problems:
         raise ValueError(f"Invalid config {path}: " + "; ".join(problems))
     return cfg
+
+
+def set_values(values: dict[str, bool | float | str], path: Path | None = None) -> None:
+    """Set top-level keys in config.toml in place, keeping comments. A key that isn't in the
+    file yet is added above the first [table], so it doesn't land inside [replacements]."""
+    import re
+
+    path = path or config_path()
+    if not path.exists():
+        load(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
+
+    def lit(v):
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        return _toml_str(v) if isinstance(v, str) else repr(v)
+
+    first_table = next((i for i, ln in enumerate(lines) if re.match(r"\s*\[", ln)), len(lines))
+    for key, value in values.items():
+        pat = re.compile(rf"^\s*{re.escape(key)}\s*=")
+        idx = next((i for i, ln in enumerate(lines[:first_table]) if pat.match(ln)), None)
+        if idx is None:
+            lines.insert(first_table, f"{key} = {lit(value)}")
+            first_table += 1
+        else:
+            lines[idx] = f"{key} = {lit(value)}"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    load(path)  # fail loudly here rather than on the next start
 
 
 # --- API key ------------------------------------------------------------------------------

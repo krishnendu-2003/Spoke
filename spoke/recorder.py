@@ -133,6 +133,7 @@ class Recorder:
         self._recording = False
         self._max_fired = False
         self._stream = None
+        self._sink: Callable[[np.ndarray], None] | None = None
         self.last_open_ms: float = 0.0
         self.level: float = 0.0  # smoothed 0..1 loudness of the live input, for the tray waveform
 
@@ -183,6 +184,8 @@ class Recorder:
             self.level = smooth_level(self.level, block_level(chunk))
             self._chunks.append(chunk)
             self._frames += len(chunk)
+            if self._sink is not None:
+                self._sink(chunk)  # voice filter: an enqueue, nothing heavier
             if self._frames >= self.max_frames and not self._max_fired:
                 self._max_fired = True
                 fire = True
@@ -193,8 +196,10 @@ class Recorder:
     def is_recording(self) -> bool:
         return self._recording
 
-    def start(self) -> None:
+    def start(self, sink: Callable[[np.ndarray], None] | None = None) -> None:
+        """`sink`, if given, also receives every captured block (from the audio thread)."""
         with self._lock:
+            self._sink = sink
             self.level = 0.0
             self._chunks = []
             self._frames = 0
@@ -209,6 +214,7 @@ class Recorder:
     def stop(self) -> Recording:
         with self._lock:
             self._recording = False
+            self._sink = None
             chunks, self._chunks = self._chunks, []
         if not self.keep_open:
             self._close_stream()
