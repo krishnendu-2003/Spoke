@@ -47,6 +47,7 @@ def setup_logging(cfg: Config, console: bool = True) -> None:
     # httpx logs every request at INFO; keep it quiet (it never logs headers/keys either way).
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("keyring").setLevel(logging.WARNING)
 
 
 @dataclass
@@ -80,9 +81,39 @@ class Pipeline:
         self.injector = injector
         self.history = history
         self.continuation = Continuation(cfg.trailing_space, cfg.trailing_space_window_seconds)
+        # Resolved against the key's /models list (resolve_cleanup_model). Until then, use the
+        # configured name ("auto" -> first preference).
+        self.cleanup_model = (
+            cfg.cleanup_model if cfg.cleanup_model != "auto" else cleanup_mod.PREFERRED_CLEANUP_MODELS[0]
+        )
+        self._bad_models: set[str] = set()
 
     def warm(self) -> None:
         self.transcriber.warm()
+
+    def resolve_cleanup_model(self) -> str | None:
+        """Pick a cleanup model the key can actually use. One GET /models (~300 ms); called at
+        startup and again whenever the current model is rejected."""
+        if not (self.cfg.effective_cleanup and self.client):
+            return None
+        try:
+            available = [m for m in self.client.list_models() if m not in self._bad_models]
+        except Exception as e:
+            log.warning("couldn't list Groq models (%s); keeping cleanup model %s", e, self.cleanup_model)
+            return self.cleanup_model
+        wanted = self.cfg.cleanup_model if self.cfg.cleanup_model not in self._bad_models else "auto"
+        picked = cleanup_mod.pick_cleanup_model(wanted, available)
+        if picked is None:
+            log.error("no usable cleanup model for this key; cleanup disabled until restart")
+        elif picked != self.cfg.cleanup_model and self.cfg.cleanup_model != "auto":
+            log.warning(
+                "cleanup_model %r isn't available to this key; using %r instead "
+                "(set cleanup_model in config.toml to silence this)", self.cfg.cleanup_model, picked,
+            )
+        else:
+            log.info("cleanup model: %s", picked)
+        self.cleanup_model = picked
+        return picked
 
     def text_for(self, rec: Recording) -> tuple[str, dict]:
         """Recording -> final text (no paste). Returns (text, info)."""
@@ -99,13 +130,18 @@ class Pipeline:
         text, status = cleanup_mod.clean(
             text,
             self.client if self.cfg.effective_cleanup else None,
-            model=self.cfg.cleanup_model,
-            enabled=self.cfg.effective_cleanup,
+            model=self.cleanup_model or "",
+            enabled=self.cfg.effective_cleanup and self.cleanup_model is not None,
             min_words=self.cfg.cleanup_min_words,
             timeout=self.cfg.cleanup_timeout_seconds,
         )
         info["cleanup_ms"] = (time.perf_counter() - t1) * 1000
         info["cleanup"] = status
+        info["cleanup_model"] = self.cleanup_model
+        if status == "fallback-model-error" and self.cleanup_model:
+            # Model gone or rejecting our params: stop using it, pick another for next time.
+            self._bad_models.add(self.cleanup_model)
+            self.resolve_cleanup_model()
         text = apply_replacements(text, self.cfg.replacements)
         return text.strip(), info
 
@@ -271,7 +307,8 @@ class Daemon:
         threading.Thread(target=self._worker, name="spoke-worker", daemon=True).start()
         self.recorder.warm()
         if self.client:
-            self.client.warm()
+            # Also opens the TLS connection, so the first dictation starts warm.
+            threading.Thread(target=self.pipeline.resolve_cleanup_model, daemon=True).start()
         mode = "hold the key" if self.cfg.mode == "hold" else "double-tap the key to start, tap to stop"
         log.info("Spoke running on %s: %s (%s). Ctrl+C to quit.", CURRENT.describe(), self.cfg.hotkey, mode)
 

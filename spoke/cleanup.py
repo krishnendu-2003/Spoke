@@ -54,11 +54,62 @@ _PREAMBLE = re.compile(
     re.IGNORECASE,
 )
 _TAGS = re.compile(r"</?transcript>", re.IGNORECASE)
+_THINK = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
 _QUOTE_PAIRS = [('"', '"'), ("“", "”"), ("'", "'"), ("`", "`")]
 
 
 class ChatClient(Protocol):
-    def chat(self, *, model: str, messages: list[dict], timeout: float, max_tokens: int) -> str: ...
+    def chat(
+        self, *, model: str, messages: list[dict], timeout: float, max_tokens: int, extra: dict | None = None
+    ) -> str: ...
+
+
+# Fastest-first. Non-reasoning models first; reasoning models are usable because
+# reasoning_params() turns their thinking down/off and hides it.
+PREFERRED_CLEANUP_MODELS = [
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "qwen/qwen3-32b",
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+]
+_NOT_CHAT = ("whisper", "guard", "tts", "playai", "orpheus", "distil", "compound", "allam")
+
+
+def reasoning_params(model: str) -> dict:
+    """Per-model request params that keep reasoning minimal and out of `content`
+    (Groq docs, console.groq.com/docs/reasoning, checked 2026-09-25):
+      - gpt-oss: no reasoning_format support; reasoning_effort low|medium|high,
+        include_reasoning=false drops the reasoning field entirely.
+      - qwen3: reasoning_effort "none" disables thinking; reasoning_format "hidden".
+      - other reasoning models (deepseek-r1 etc.): reasoning_format "hidden".
+    include_reasoning and reasoning_format can't be combined, so each branch uses one."""
+    m = model.lower()
+    if "gpt-oss" in m:
+        return {"reasoning_effort": "low", "include_reasoning": False}
+    if "qwen3" in m or "qwq" in m:
+        return {"reasoning_effort": "none", "reasoning_format": "hidden"}
+    if "deepseek-r1" in m or "-r1-" in m:
+        return {"reasoning_format": "hidden"}
+    return {}
+
+
+def is_reasoning_model(model: str) -> bool:
+    return bool(reasoning_params(model))
+
+
+def pick_cleanup_model(configured: str, available: list[str]) -> str | None:
+    """The configured model if the key can use it, else the first preferred model that is
+    available, else any chat-looking model. "auto" skips straight to the preference list."""
+    avail = set(available)
+    if configured and configured != "auto" and configured in avail:
+        return configured
+    for m in PREFERRED_CLEANUP_MODELS:
+        if m in avail:
+            return m
+    rest = sorted(m for m in available if not any(x in m.lower() for x in _NOT_CHAT))
+    return rest[0] if rest else None
 
 
 def build_messages(text: str) -> list[dict]:
@@ -71,7 +122,12 @@ def build_messages(text: str) -> list[dict]:
 
 
 def sanitize(output: str) -> str:
-    out = _TAGS.sub("", output).strip()
+    # Belt and braces: if a model ever inlines its reasoning despite reasoning_params(),
+    # strip it. An unterminated <think> means the answer never arrived -> empty (fallback).
+    out = _THINK.sub("", output)
+    if re.search(r"<think>", out, re.IGNORECASE):
+        return ""
+    out = _TAGS.sub("", out).strip()
     out = _PREAMBLE.sub("", out).strip()
     for left, right in _QUOTE_PAIRS:
         if len(out) >= 2 and out.startswith(left) and out.endswith(right):
@@ -111,21 +167,27 @@ def clean(
     timeout: float = 1.0,
 ) -> tuple[str, str]:
     """Return (text, status). status is one of: skipped-disabled, skipped-short, ok,
-    fallback-error, fallback-unfaithful. On any fallback the raw text is returned."""
+    fallback-error, fallback-model-error (model missing/rejected: caller should re-pick),
+    fallback-unfaithful. On any fallback the raw text is returned."""
     if not enabled or client is None:
         return text, "skipped-disabled"
     if word_count(text) < min_words:
         return text, "skipped-short"
+    extra = reasoning_params(model)
     try:
         out = client.chat(
             model=model,
             messages=build_messages(text),
             timeout=timeout,
-            # Generous: Devanagari/Bengali script can cost ~1 token per char.
-            max_tokens=len(text) + 64,
+            # Generous: Devanagari/Bengali script can cost ~1 token per char. Reasoning models
+            # count (low-effort) thinking tokens against this too.
+            max_tokens=len(text) + 64 + (512 if extra else 0),
+            extra=extra or None,
         )
     except Exception as e:
         log.warning("cleanup failed (%s: %s); using raw transcript", type(e).__name__, e)
+        if getattr(e, "status", None) in (400, 404):
+            return text, "fallback-model-error"
         return text, "fallback-error"
     cleaned = sanitize(out)
     if looks_unfaithful(text, cleaned):

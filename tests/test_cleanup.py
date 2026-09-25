@@ -7,8 +7,8 @@ class FakeLLM:
     def __init__(self, reply=None, exc=None):
         self.reply, self.exc, self.calls = reply, exc, []
 
-    def chat(self, *, model, messages, timeout, max_tokens):
-        self.calls.append(dict(model=model, messages=messages, timeout=timeout, max_tokens=max_tokens))
+    def chat(self, *, model, messages, timeout, max_tokens, extra=None):
+        self.calls.append(dict(model=model, messages=messages, timeout=timeout, max_tokens=max_tokens, extra=extra))
         if self.exc:
             raise self.exc
         return self.reply
@@ -98,3 +98,73 @@ def test_max_tokens_generous_for_indic_scripts():
     llm = FakeLLM("ठीक है, कल डिप्लॉय करो।")
     cleanup.clean("ठीक है उह कल डिप्लॉय करो", llm, model="m")
     assert llm.calls[0]["max_tokens"] >= len("ठीक है उह कल डिप्लॉय करो")
+
+
+# --- reasoning models & model selection -------------------------------------------------
+
+def test_reasoning_params_per_model_family():
+    assert cleanup.reasoning_params("openai/gpt-oss-20b") == {"reasoning_effort": "low", "include_reasoning": False}
+    assert cleanup.reasoning_params("openai/gpt-oss-120b")["reasoning_effort"] == "low"
+    assert cleanup.reasoning_params("qwen/qwen3.8-27b") == {"reasoning_effort": "none", "reasoning_format": "hidden"}
+    assert cleanup.reasoning_params("llama-3.1-8b-instant") == {}
+    for m in ["openai/gpt-oss-20b", "qwen/qwen3.8-27b", "deepseek-r1-distill-llama-70b"]:
+        p = cleanup.reasoning_params(m)
+        # Groq rejects include_reasoning together with reasoning_format
+        assert not ("include_reasoning" in p and "reasoning_format" in p)
+
+
+def test_reasoning_model_gets_params_and_headroom():
+    llm = FakeLLM("So the deploy is at 6 tomorrow.")
+    cleanup.clean(RAW, llm, model="openai/gpt-oss-20b")
+    call = llm.calls[0]
+    assert call["extra"] == {"reasoning_effort": "low", "include_reasoning": False}
+    assert call["max_tokens"] >= len(RAW) + 512
+
+
+def test_non_reasoning_model_sends_no_extra():
+    llm = FakeLLM("So the deploy is at 6 tomorrow.")
+    cleanup.clean(RAW, llm, model="llama-3.1-8b-instant")
+    assert llm.calls[0]["extra"] is None
+
+
+@pytest.mark.parametrize("reply", [
+    "<think>The user wants cleanup. Remove um.</think>So the deploy is at 6 tomorrow.",
+    "<THINK>\nreasoning\n</THINK>\n So the deploy is at 6 tomorrow.",
+])
+def test_inline_reasoning_is_stripped(reply):
+    assert cleanup.clean(RAW, FakeLLM(reply), model="m") == ("So the deploy is at 6 tomorrow.", "ok")
+
+
+def test_unterminated_reasoning_never_pasted():
+    out = cleanup.clean(RAW, FakeLLM("<think>still thinking about the deploy and"), model="m")
+    assert out == (RAW, "fallback-unfaithful")
+
+
+def test_model_missing_is_reported_for_repick():
+    from spoke.groq_api import GroqError
+
+    err = GroqError("HTTP 404 from /chat/completions: model does not exist", 404)
+    assert cleanup.clean(RAW, FakeLLM(exc=err), model="gone") == (RAW, "fallback-model-error")
+
+
+KRISHNENDU_KEY = ["allam-2-7b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b",
+                  "whisper-large-v3", "whisper-large-v3-turbo"]
+
+
+def test_pick_keeps_configured_model_when_available():
+    assert cleanup.pick_cleanup_model("openai/gpt-oss-120b", KRISHNENDU_KEY) == "openai/gpt-oss-120b"
+
+
+def test_pick_falls_back_when_configured_model_missing():
+    # the real case from a Mac doctor run: llama-3.1-8b-instant 404s for this key
+    assert cleanup.pick_cleanup_model("llama-3.1-8b-instant", KRISHNENDU_KEY) == "openai/gpt-oss-20b"
+    assert cleanup.pick_cleanup_model("auto", KRISHNENDU_KEY) == "openai/gpt-oss-20b"
+
+
+def test_pick_prefers_llama_instant_when_available():
+    assert cleanup.pick_cleanup_model("auto", KRISHNENDU_KEY + ["llama-3.1-8b-instant"]) == "llama-3.1-8b-instant"
+
+
+def test_pick_unknown_catalog_uses_any_chat_model_never_whisper():
+    assert cleanup.pick_cleanup_model("auto", ["whisper-large-v3", "some/new-model"]) == "some/new-model"
+    assert cleanup.pick_cleanup_model("auto", ["whisper-large-v3"]) is None

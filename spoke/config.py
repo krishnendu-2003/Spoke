@@ -120,10 +120,9 @@ class Config:
     local_only: bool = False
     local_model_size: str = "base"
     cleanup: bool = True
-    # Chosen 2026-09-25 from Groq's production model list (console.groq.com/docs/models):
-    # non-reasoning, lowest time-to-first-token of the production chat models. Not
-    # live-verified against your key -- `python -m spoke doctor` lists what your key can use.
-    cleanup_model: str = "llama-3.1-8b-instant"
+    # "auto" = first of cleanup.PREFERRED_CLEANUP_MODELS that the key can use. A named model
+    # that the key can't use also falls back to that list instead of failing every utterance.
+    cleanup_model: str = "auto"
     cleanup_timeout_seconds: float = 1.0
     cleanup_min_words: int = 4
     sounds: bool = True
@@ -210,10 +209,11 @@ local_model_size = "base"
 
 # --- Cleanup LLM pass ---------------------------------------------------------------------
 cleanup = true
-# Picked 2026-09-25 from Groq's production model list (console.groq.com/docs/models):
-# non-reasoning and the lowest-latency production chat model. NOT verified against your
-# key -- run `python -m spoke doctor` to list the models your key can use and change this
-# if needed. Avoid reasoning models (e.g. gpt-oss-*) here: thinking tokens blow the 1 s budget.
+# "auto" picks the fastest model your key can use, in this order: llama-3.1-8b-instant,
+# openai/gpt-oss-20b, qwen/qwen3.8-27b, qwen/qwen3-32b, llama-3.3-70b-versatile,
+# openai/gpt-oss-120b. Or name one (`doctor` lists what your key can use); if it isn't
+# available Spoke falls back to the same list. Reasoning models (gpt-oss, qwen3) are sent
+# with thinking set to low/off and hidden -- only the cleaned text is ever pasted.
 cleanup_model = "{d.cleanup_model}"
 # Cleanup slower than this falls back to the raw transcript.
 cleanup_timeout_seconds = 1.0

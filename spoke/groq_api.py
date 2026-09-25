@@ -21,6 +21,10 @@ RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 class GroqError(Exception):
     """Raised with a short, log-safe message (never contains the API key)."""
 
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
 
 class GroqClient:
     def __init__(self, api_key: str, base_url: str = BASE_URL) -> None:
@@ -67,7 +71,7 @@ class GroqClient:
                     log.warning("groq %s -> HTTP %s, retrying", path, resp.status_code)
                     continue
                 if resp.status_code >= 400:
-                    raise GroqError(f"HTTP {resp.status_code} from {path}: {_error_text(resp)}")
+                    raise GroqError(f"HTTP {resp.status_code} from {path}: {_error_text(resp)}", resp.status_code)
                 return resp.json()
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 if attempt < retries:
@@ -95,13 +99,18 @@ class GroqClient:
         body = self._post("/audio/transcriptions", data=data, files=files, timeout=timeout, retries=retries)
         return str(body.get("text", "")).strip()
 
-    def chat(self, *, model: str, messages: list[dict], timeout: float, max_tokens: int) -> str:
+    def chat(
+        self, *, model: str, messages: list[dict], timeout: float, max_tokens: int, extra: dict | None = None
+    ) -> str:
+        """Returns ONLY message.content. Reasoning models may also return a separate
+        `reasoning` field; it is never read, so it can never be pasted."""
         payload = {
             "model": model,
             "messages": messages,
             "temperature": 0,
             "max_tokens": max_tokens,
             "stream": False,
+            **(extra or {}),
         }
         # No retry: cleanup has a hard 1 s budget and falls back to the raw transcript.
         body = self._post("/chat/completions", json=payload, timeout=timeout, retries=0)

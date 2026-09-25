@@ -96,7 +96,7 @@ The file is created with comments on first run. Restart Spoke after editing.
 | `local_only` | `false` | forces local STT **and** disables cloud cleanup |
 | `local_model_size` | `"base"` | `tiny`/`base`/`small`/`medium`/`large-v3` |
 | `cleanup` | `true` | LLM cleanup pass |
-| `cleanup_model` | `"llama-3.1-8b-instant"` | see Decisions; `doctor` lists alternatives |
+| `cleanup_model` | `"auto"` | fastest model your key can use; a named model that isn't available falls back automatically |
 | `cleanup_timeout_seconds` | `1.0` | slower means the raw transcript is used |
 | `cleanup_min_words` | `4` | shorter utterances skip cleanup |
 | `sounds` | `true` | start/stop/error cues |
@@ -127,7 +127,7 @@ The API key is **never** in this file. It is read from the OS keychain (service 
 Each assumption made without asking, with its trade-off:
 
 1. **WAV, not FLAC, for upload.** Encoding costs nothing and Groq's docs recommend WAV for latency. 5 min of 16 kHz mono is about 9.6 MB, under the 25 MB free-tier limit. Trade-off: a larger upload than FLAC (about 2×) on slow links.
-2. **Cleanup model `llama-3.1-8b-instant`.** Picked from Groq's production model list on 2026-09-25 (console.groq.com/docs/models). It is a non-reasoning model and the lowest-latency production chat model. `openai/gpt-oss-20b` has higher throughput but is a reasoning model, and its thinking tokens would eat the 1 s budget. **This was not verified against the models endpoint with your key**, because no key was available when this was built. `doctor` checks it and lists the alternatives.
+2. **Cleanup model is picked from what your key can use.** `cleanup_model = "auto"` tries `llama-3.1-8b-instant`, then `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`, `qwen/qwen3-32b`, `llama-3.3-70b-versatile` and `openai/gpt-oss-120b`, in that order. A named model that isn't available (or that Groq rejects mid-session) falls back to the same list rather than failing on every utterance. Model access varies by key: on one real key `llama-3.1-8b-instant` returned 404. Reasoning models are called with thinking turned down and hidden, following Groq's reasoning docs as of 2026-09-25: gpt-oss gets `reasoning_effort: "low"` and `include_reasoning: false`, and qwen3 gets `reasoning_effort: "none"` and `reasoning_format: "hidden"`. Spoke only ever reads `message.content`, and strips any inline `<think>` block. `doctor` times three cleanup calls against the 1 s budget.
 3. **Warm TLS on key-down.** A persistent HTTP client (120 s keep-alive) pre-opens the Groq connection while you are still talking, which takes 100–300 ms of handshake out of the post-release path.
 4. **Cleanup safety net.** Besides the strict prompt, the transcript is wrapped in `<transcript>` tags as data, and few-shot examples show a question being cleaned, not answered. If the output is much longer than the input (it answered) or much shorter (it summarised), Spoke pastes the raw transcript instead.
 5. **"Trailing space" means a separator space before the next paste.** When you dictate into the same app within 30 s, the new text starts with a space. The result is the same as a trailing space, but a single dictation never leaves a dangling space. The rule is skipped if the text starts with punctuation.

@@ -81,6 +81,7 @@ def cmd_test_mic(args) -> int:
     client = GroqClient(key) if key else None
     try:
         pipe = Pipeline(cfg, client, injector=None, history=None)
+        pipe.resolve_cleanup_model()
         t0 = time.perf_counter()
         text, info = pipe.text_for(rec)
         total = (time.perf_counter() - t0) * 1000
@@ -89,7 +90,8 @@ def cmd_test_mic(args) -> int:
         return 1
     print(f"  raw:       {info['raw']!r}")
     print(f"  final:     {text!r}")
-    print(f"  latency:   stt {info['stt_ms']:.0f} ms | cleanup {info['cleanup_ms']:.0f} ms ({info['cleanup']}) "
+    print(f"  latency:   stt {info['stt_ms']:.0f} ms | cleanup {info['cleanup_ms']:.0f} ms "
+          f"({info['cleanup']}, {info.get('cleanup_model') or 'none'}) "
           f"| total {total:.0f} ms (excl. paste)")
     return 0
 
@@ -270,12 +272,21 @@ def _doctor_groq(cfg: Config, key: str) -> int:
         _line("FAIL", "reachable", f"{type(e).__name__}: {e}")
         return 1
 
-    for label, model in (("stt model", cfg.stt_model), ("cleanup model", cfg.cleanup_model)):
-        if model in models:
-            _line("OK", label, model)
-        else:
-            _line("FAIL", label, f"{model} not available to this key")
-            failures += 1
+    if cfg.stt_model in models:
+        _line("OK", "stt model", cfg.stt_model)
+    else:
+        _line("FAIL", "stt model", f"{cfg.stt_model} not available to this key")
+        failures += 1
+    cleanup_model = cleanup_mod.pick_cleanup_model(cfg.cleanup_model, models)
+    reasoning = " (reasoning model: thinking set low/off and hidden)" if cleanup_mod.is_reasoning_model(cleanup_model or "") else ""
+    if cleanup_model is None:
+        _line("FAIL", "cleanup model", "no usable chat model for this key")
+        failures += 1
+    elif cleanup_model == cfg.cleanup_model:
+        _line("OK", "cleanup model", cleanup_model + reasoning)
+    else:
+        why = "auto" if cfg.cleanup_model == "auto" else f"{cfg.cleanup_model} not available to this key"
+        _line("OK", "cleanup model", f"{cleanup_model}{reasoning} ({why}; picked automatically)")
     chat_models = [m for m in models if not any(x in m for x in ("whisper", "guard", "tts", "playai", "orpheus", "distil"))]
     print(f"         chat models your key can use: {', '.join(chat_models)}")
 
@@ -290,15 +301,24 @@ def _doctor_groq(cfg: Config, key: str) -> int:
     except GroqError as e:
         _line("FAIL", "STT round trip", str(e))
         failures += 1
-    if cfg.effective_cleanup:
+    if cfg.effective_cleanup and cleanup_model:
         sample = "um so the deploy is at 5 no 6 tomorrow you know"
-        t0 = time.perf_counter()
-        out, status = cleanup_mod.clean(sample, client, model=cfg.cleanup_model,
-                                        timeout=cfg.cleanup_timeout_seconds)
-        ms = (time.perf_counter() - t0) * 1000
-        ok = status == "ok"
-        _line("OK" if ok else "FAIL", "cleanup round trip", f"{ms:.0f} ms ({status}) -> {out!r}")
-        failures += not ok
+        runs = []
+        for _ in range(3):  # first call can include connection/model warm-up
+            t0 = time.perf_counter()
+            out, status = cleanup_mod.clean(sample, client, model=cleanup_model,
+                                            timeout=max(cfg.cleanup_timeout_seconds, 5.0))
+            runs.append(((time.perf_counter() - t0) * 1000, status, out))
+        ok = all(s == "ok" for _, s, _ in runs)
+        med = statistics.median(ms for ms, _, _ in runs)
+        within = med <= cfg.cleanup_timeout_seconds * 1000
+        _line("OK" if ok and within else "FAIL", "cleanup round trip",
+              f"median {med:.0f} ms of {', '.join(f'{ms:.0f}' for ms, _, _ in runs)} "
+              f"(budget {cfg.cleanup_timeout_seconds * 1000:.0f} ms, {runs[-1][1]}) -> {runs[-1][2]!r}")
+        if ok and not within:
+            print("         over budget: dictation would fall back to raw text. Try another model or raise "
+                  "cleanup_timeout_seconds.")
+        failures += not (ok and within)
     return failures
 
 

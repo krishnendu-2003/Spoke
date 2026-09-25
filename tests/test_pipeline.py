@@ -132,3 +132,37 @@ def test_second_dictation_gets_separator_space(tmp_path, no_app):
 def test_missing_key_for_groq_backend_errors_clearly():
     with pytest.raises(TranscriptionError, match="setup"):
         daemon.Pipeline(Config(), None, None, None)
+
+
+def test_rejected_cleanup_model_is_replaced_for_next_utterance(tmp_path, no_app):
+    from spoke.groq_api import GroqError
+
+    class Picky(FakeGroq):
+        def __init__(self):
+            super().__init__("um so the deploy is at 5 no 6 tomorrow", None)
+            self.models_used = []
+
+        def list_models(self):
+            return ["openai/gpt-oss-20b", "qwen/qwen3.8-27b", "whisper-large-v3-turbo"]
+
+        def chat(self, *, model, **kw):
+            self.models_used.append(model)
+            if model == "llama-3.1-8b-instant":
+                raise GroqError("HTTP 404 from /chat/completions: no such model", 404)
+            return "So the deploy is at 6 tomorrow."
+
+    groq = Picky()
+    p, inj = make(tmp_path, groq, cleanup_model="llama-3.1-8b-instant")
+    p.process(speech(), 0)
+    p.process(speech(), 0)
+    assert groq.models_used == ["llama-3.1-8b-instant", "openai/gpt-oss-20b"]
+    assert inj.injected == ["um so the deploy is at 5 no 6 tomorrow", " So the deploy is at 6 tomorrow."]
+
+
+def test_startup_resolution_picks_available_model(tmp_path, no_app):
+    class G(FakeGroq):
+        def list_models(self):
+            return ["openai/gpt-oss-20b"]
+
+    p, _ = make(tmp_path, G(), cleanup_model="auto")
+    assert p.resolve_cleanup_model() == "openai/gpt-oss-20b"
