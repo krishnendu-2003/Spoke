@@ -259,8 +259,11 @@ input_device = ""
 
 # --- Voice lock & noise suppression (on-device) ----------------------------------------------
 # Run `python -m spoke enroll` once: it downloads the on-device models (~41 MB), records a few
-# sentences, saves your voiceprint to ~/.spoke/voiceprint.json and turns both of these on.
-# true = remove background noise on this machine before sending audio to STT.
+# sentences, saves your voiceprint to ~/.spoke/voiceprint.json and turns voice_lock on.
+# Noise is always removed on this machine to FIND and MATCH your speech. This setting only
+# decides which audio is sent to STT: false = your original audio (Whisper handles background
+# noise well, and denoised audio mangled words in a real test); true = the denoised audio.
+# Compare both with `python -m spoke test-mic --compare`.
 noise_suppression = {str(d.noise_suppression).lower()}
 # true = only speech that matches your voiceprint is sent; other voices are cut out.
 voice_lock = {str(d.voice_lock).lower()}

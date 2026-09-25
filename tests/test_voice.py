@@ -105,7 +105,7 @@ def me_profile(engine=FakeEngine()):
     return voice.Profile(embeddings=[engine.embed(tone(ME, 1.0)).tolist()], threshold=0.5)
 
 
-def run(samples, centroid, threshold=0.5, engine=None, send_denoised=True):
+def run(samples, centroid, threshold=0.5, engine=None, send_denoised=False):
     s = voice.VoiceSession(engine or FakeEngine(), centroid, threshold, send_denoised)
     voice.feed_all(s, samples)
     return s.finish()
@@ -358,7 +358,7 @@ class FakeInjector:
 
 def make_pipeline(tmp_path, monkeypatch, engine=None):
     monkeypatch.setattr(daemon, "active_app", lambda: "editor")
-    cfg = Config(voice_lock=True, noise_suppression=True, cleanup=False)
+    cfg = Config(voice_lock=True, cleanup=False)
     vf = voice.VoiceFilter(cfg, engine=engine or FakeEngine(), profile=me_profile())
     groq, inj = CapturingGroq(), FakeInjector()
     return daemon.Pipeline(cfg, groq, inj, History(tmp_path / "h.jsonl"), voice=vf), groq, inj
@@ -429,3 +429,38 @@ def test_quiet_mic_is_not_dropped_by_rms_gate_when_filter_on(tmp_path, monkeypat
     quiet = Recording(i16([tone(ME, 2.0, amp=0.005)]))  # RMS ~116, under the default 150 gate
     assert quiet.rms < p.cfg.silence_rms_threshold
     assert p.process(quiet, released_at=0) == "hello there"
+
+
+def test_voice_lock_sends_original_audio_with_soft_edges():
+    """The denoised copy is only for analysis; what's sent is the untouched original."""
+
+    class Halver(FakeDenoiser):
+        def run(self, x):
+            return x * 0.5
+
+    class E(FakeEngine):
+        def new_denoiser(self):
+            return Halver()
+
+    audio = i16([tone(OTHER, 2.0), silence(0.5), tone(ME, 3.0), silence(0.5)])
+    r = run(audio, E().embed(tone(ME, 1.0)), engine=E())
+    assert r.status == "ok"
+    peak = np.abs(r.samples).max()
+    assert peak > 0.9 * np.abs(audio).max()  # not the halved, denoised copy
+    assert abs(int(r.samples[0])) < 0.05 * peak and abs(int(r.samples[-1])) < 0.05 * peak
+
+
+def test_enroll_does_not_turn_on_denoised_upload(isolated_home, monkeypatch):
+    from spoke import cli
+
+    monkeypatch.setattr(voice, "download_models", lambda: None)
+    monkeypatch.setattr(voice, "Engine", FakeEngine)
+    wav = isolated_home / "me.wav"
+    wav.parent.mkdir(parents=True, exist_ok=True)
+    import soundfile as sf
+
+    sf.write(wav, i16([silence(0.3), tone(ME, 3.0), silence(0.3)]), SR)
+    monkeypatch.setitem(sys.modules, "sherpa_onnx", object())
+    assert cli.main(["enroll", "--from-files", str(wav), str(wav), str(wav)]) == 0
+    cfg = config_mod.load()
+    assert cfg.voice_lock and not cfg.noise_suppression

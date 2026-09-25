@@ -3,7 +3,9 @@
 While you hold the hotkey, every 20 ms mic block also goes to a VoiceSession worker thread
 that denoises it (GTCRN, streaming), finds speech with Silero VAD, and scores each ~1.5 s
 piece of speech against your enrolled voiceprint (TitaNet-small speaker embeddings). Pieces
-that don't sound like you are cut. Only the kept audio goes to STT, so most of the work
+that don't sound like you are cut. Only the kept spans of your ORIGINAL audio go to STT
+(the denoised copy is only used to find and match speech: on a real MacBook test, sending
+denoised audio mangled words that Whisper got right from the original), so most of the work
 happens while you are still talking and key release only waits for the last piece.
 
 Everything here runs on the CPU through sherpa-onnx. Audio and the voiceprint never leave
@@ -75,6 +77,7 @@ PIECE_SECONDS = 1.5  # speech is scored in pieces of ~this length
 MIN_EMBED_SECONDS = 1.0  # shorter pieces are scored with surrounding audio as context
 PAD_SECONDS = 0.2  # kept speech is padded so word edges aren't clipped
 GAP_SECONDS = 0.15  # silence inserted between kept runs
+FADE_SECONDS = 0.01  # kept runs fade in/out so cuts don't click
 DEFAULT_THRESHOLD = 0.50
 THRESHOLD_MIN, THRESHOLD_MAX = 0.42, 0.58
 # How a recording is judged (tuned on simulated crowds, see decide()):
@@ -337,7 +340,7 @@ class VoiceSession:
         engine,  # an Engine, or a zero-arg callable returning one
         centroid: np.ndarray | None,
         threshold: float,
-        send_denoised: bool = True,
+        send_denoised: bool = False,
     ) -> None:
         self._engine_src = engine
         self.centroid = centroid
@@ -441,7 +444,7 @@ class VoiceSession:
         for a, b in zip(edges[::2], edges[1::2]):
             if runs:
                 runs.append(gap)
-            runs.append(out_audio[a:b])
+            runs.append(_faded(out_audio[a:b]))
         res.samples = _to_int16(np.concatenate(runs))
         res.kept_s = float(mask.sum()) / SAMPLE_RATE
         return res
@@ -451,6 +454,17 @@ def _joined(parts: list[np.ndarray]) -> np.ndarray:
     if not parts:
         return np.zeros(0, dtype=np.float32)
     return parts[0] if len(parts) == 1 else np.concatenate(parts)
+
+
+def _faded(x: np.ndarray) -> np.ndarray:
+    k = min(int(FADE_SECONDS * SAMPLE_RATE), len(x) // 2)
+    if k == 0:
+        return x
+    x = x.copy()
+    ramp = np.linspace(0.0, 1.0, k, dtype=np.float32)
+    x[:k] *= ramp
+    x[-k:] *= ramp[::-1]
+    return x
 
 
 def _to_int16(x: np.ndarray) -> np.ndarray:

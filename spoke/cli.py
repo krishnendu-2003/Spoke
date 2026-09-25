@@ -202,8 +202,8 @@ def cmd_enroll(args) -> int:
     print(f"\nSaved your voiceprint ({len(profile.embeddings)} clips) to {path}")
     print(f"Your own speech scores a median {med:.2f} against it; threshold set to {profile.threshold:.2f}.")
     if not args.no_enable:
-        config_mod.set_values({"voice_lock": True, "noise_suppression": True})
-        print("Turned on voice_lock and noise_suppression in config.toml. Restart Spoke to apply.")
+        config_mod.set_values({"voice_lock": True})
+        print("Turned on voice_lock in config.toml. Restart Spoke to apply.")
     print(f"Try it:  {spoke_cmd('test-mic --compare -v')}")
     return 0
 

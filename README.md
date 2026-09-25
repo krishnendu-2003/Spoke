@@ -60,12 +60,14 @@ Start at login: `scripts/install_autostart.sh` (macOS/Linux) or `powershell -Exe
 .venv/bin/python -m spoke test-mic --compare -v
 ```
 
-`enroll` records you reading six sentences, saves a voiceprint to `~/.spoke/voiceprint.json` (`0600`), and turns on `voice_lock` and `noise_suppression`. From then on, each dictation is processed on your machine while you talk:
+`enroll` records you reading six sentences, saves a voiceprint to `~/.spoke/voiceprint.json` (`0600`), and turns on `voice_lock`. From then on, each dictation is processed on your machine while you talk:
 
 ```
 mic → noise suppression (GTCRN) → speech detection (Silero VAD) → ~1.5 s pieces
     → speaker match vs your voiceprint (TitaNet-small) → only your pieces go to Groq
 ```
+
+The denoised copy is only used to find and match your speech. What goes to Groq is your **original** audio for the kept spans, with 10 ms fades at each cut. On a real MacBook test, sending the denoised audio turned "deploy to 6 tomorrow" into "deploy262moto", while Whisper got the original right. Whisper already copes well with background noise. `noise_suppression = true` sends the denoised audio instead; `test-mic --compare` shows both.
 
 - **Removed:** background noise, and other people talking before, after or between your sentences.
 - **Not removed:** someone talking *at the same moment* as you. That piece is a mix; it's kept when you dominate it (you're closer to the mic) and cut when they do. Separating overlapping voices is target-speaker extraction, which needs a much heavier model and would blow the latency budget on CPU. A close mic (AirPods or a headset) is the practical fix for loud crowds.
@@ -131,7 +133,7 @@ The file is created with comments on first run. Restart Spoke after editing.
 | `silence_rms_threshold` | `150` | int16 RMS. Calibrate with `test-mic`. Ignored while voice lock or noise suppression is on: speech detection decides instead |
 | `keep_mic_open` | `false` | `true` makes start instant but keeps the OS mic indicator on |
 | `input_device` | `""` | device name or index; empty means system default |
-| `noise_suppression` | `false` | on-device noise removal before STT. `enroll` turns it on |
+| `noise_suppression` | `false` | `true` sends denoised audio to STT. Off by default: denoising is always used to find your speech, but denoised audio hurt Whisper in a real test |
 | `voice_lock` | `false` | send only speech that matches your voiceprint. `enroll` turns it on |
 | `voice_lock_threshold` | `0` | `0` uses the threshold calibrated at enrollment (0.42-0.58). Raise it if other voices get through, lower it if your words get cut |
 | `paste_method` | `"clipboard"` | `clipboard` (save, paste, restore) or `type` (simulated typing; never touches the clipboard) |
