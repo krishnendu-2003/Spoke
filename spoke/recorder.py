@@ -68,6 +68,19 @@ def encode_wav(samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
     return buf.getvalue()
 
 
+def block_level(samples: np.ndarray) -> float:
+    """Loudness of one audio block mapped to 0..1 on a log scale: room noise (~RMS 30) ~ 0,
+    normal speech (~RMS 1000-3000) ~ 0.75-1."""
+    r = rms(samples)
+    db = 20 * np.log10(r + 1.0)
+    return float(np.clip((db - 30.0) / 40.0, 0.0, 1.0))
+
+
+def smooth_level(prev: float, new: float) -> float:
+    """Fast attack, slow release, so the waveform jumps with syllables and settles gently."""
+    return new if new > prev else prev * 0.85 + new * 0.15
+
+
 def encode_flac(samples: np.ndarray, sample_rate: int = SAMPLE_RATE) -> bytes:
     import soundfile as sf
 
@@ -121,6 +134,7 @@ class Recorder:
         self._max_fired = False
         self._stream = None
         self.last_open_ms: float = 0.0
+        self.level: float = 0.0  # smoothed 0..1 loudness of the live input, for the tray waveform
 
     # sounddevice is imported lazily so `import spoke` works without PortAudio (tests, CI).
     def _open_stream(self) -> None:
@@ -166,6 +180,7 @@ class Recorder:
             if room <= 0:
                 return
             chunk = indata[:room, 0].copy()
+            self.level = smooth_level(self.level, block_level(chunk))
             self._chunks.append(chunk)
             self._frames += len(chunk)
             if self._frames >= self.max_frames and not self._max_fired:
@@ -180,6 +195,7 @@ class Recorder:
 
     def start(self) -> None:
         with self._lock:
+            self.level = 0.0
             self._chunks = []
             self._frames = 0
             self._max_fired = False

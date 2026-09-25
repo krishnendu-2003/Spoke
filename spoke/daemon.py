@@ -318,7 +318,9 @@ class Daemon:
         if self.cfg.tray:
             from . import tray as tray_mod
 
-            self.tray = tray_mod.try_create("Spoke", self.quit, self._open_history)
+            self.tray = tray_mod.try_create(
+                "Spoke", self.quit, self._open_history, level=lambda: self.recorder.level
+            )
         if self.tray:
             notify.set_tray_notifier(self.tray.notify)
             # pystray needs the main thread on macOS; pynput listens on its own thread.

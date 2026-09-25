@@ -103,7 +103,7 @@ The file is created with comments on first run. Restart Spoke after editing.
 | `cleanup_mode` | `"smart"` | `smart` calls the LLM only when the text needs judgement (self-corrections, "you know", repeats, non-English) and strips plain "um/uh" locally; `always` sends everything |
 | `sounds` | `true` | start/stop/error cues |
 | `notifications` | `true` | desktop notifications for errors/auto-stop |
-| `tray` | `true` | tray icon (grey idle / red recording / amber processing) |
+| `tray` | `true` | black-and-white waveform icon in the menu bar / tray: still bars when idle, bars swing with your voice while recording, a ripple while processing |
 | `max_seconds` | `300` | auto-stop |
 | `min_seconds` | `0.3` | shorter recordings are discarded |
 | `silence_rms_threshold` | `150` | int16 RMS. Calibrate with `test-mic` |
