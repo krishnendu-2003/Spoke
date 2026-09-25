@@ -69,8 +69,13 @@ def cmd_test_mic(args) -> int:
             print("Check System Settings > Privacy & Security > Microphone for your terminal app.")
         return 1
     print(f"  duration:  {rec.duration:.2f} s   (mic stream opened in {rec_.last_open_ms:.0f} ms)")
-    print(f"  RMS level: {rec.rms:.0f}   (silence threshold: {cfg.silence_rms_threshold:.0f})")
-    reason = rejection_reason(rec, cfg.min_seconds, cfg.silence_rms_threshold)
+    from .voice import VoiceFilter
+
+    vf = VoiceFilter(cfg)
+    silence = 0.0 if vf.active else cfg.silence_rms_threshold
+    gate = "speech detection (voice filter on)" if vf.active else f"silence threshold: {silence:.0f}"
+    print(f"  RMS level: {rec.rms:.0f}   ({gate})")
+    reason = rejection_reason(rec, cfg.min_seconds, silence)
     if reason:
         print(f"  -> would be discarded: {reason}")
         print("     If you were speaking, lower silence_rms_threshold in config.toml "
@@ -80,7 +85,7 @@ def cmd_test_mic(args) -> int:
     key, _ = get_api_key()
     client = GroqClient(key) if key else None
     try:
-        pipe = Pipeline(cfg, client, injector=None, history=None)
+        pipe = Pipeline(cfg, client, injector=None, history=None, voice=vf)
         if pipe.voice.problem:
             print(f"  voice:     off -- {pipe.voice.problem}")
         original = rec

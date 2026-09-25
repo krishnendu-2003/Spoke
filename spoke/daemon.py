@@ -181,7 +181,10 @@ class Pipeline:
 
     def process(self, rec: Recording, released_at: float, session: VoiceSession | None = None) -> str | None:
         cfg = self.cfg
-        reason = rejection_reason(rec, cfg.min_seconds, cfg.silence_rms_threshold)
+        # With the voice filter on, its speech detector decides what is silence: a fixed RMS
+        # gate drops quiet-mic dictation before the filter ever hears it.
+        silence = 0.0 if self.voice.active else cfg.silence_rms_threshold
+        reason = rejection_reason(rec, cfg.min_seconds, silence)
         if reason:
             if session is not None:
                 session.cancel()

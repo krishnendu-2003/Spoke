@@ -31,7 +31,7 @@ class FakeVad:
         out = []
         n = len(buf) - len(buf) % self.FRAME
         for i in range(0, n, self.FRAME):
-            loud = np.sqrt(np.mean(buf[i : i + self.FRAME] ** 2)) > 0.01
+            loud = np.sqrt(np.mean(buf[i : i + self.FRAME] ** 2)) > 0.002
             if loud:
                 if self.start is None:
                     self.start = self.pos
@@ -422,3 +422,10 @@ def test_real_engine_smoke():
     assert r.status in ("no-speech", "not-you", "ok")
     e = eng.embed(tone(ME, 1.5))
     assert e.shape == (eng.dim,) and abs(np.linalg.norm(e) - 1) < 1e-3
+
+
+def test_quiet_mic_is_not_dropped_by_rms_gate_when_filter_on(tmp_path, monkeypatch):
+    p, groq, inj = make_pipeline(tmp_path, monkeypatch)
+    quiet = Recording(i16([tone(ME, 2.0, amp=0.005)]))  # RMS ~116, under the default 150 gate
+    assert quiet.rms < p.cfg.silence_rms_threshold
+    assert p.process(quiet, released_at=0) == "hello there"

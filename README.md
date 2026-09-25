@@ -128,7 +128,7 @@ The file is created with comments on first run. Restart Spoke after editing.
 | `tray` | `true` | black-and-white waveform icon in the menu bar / tray: still bars when idle, bars swing with your voice while recording, a ripple while processing |
 | `max_seconds` | `300` | auto-stop |
 | `min_seconds` | `0.3` | shorter recordings are discarded |
-| `silence_rms_threshold` | `150` | int16 RMS. Calibrate with `test-mic` |
+| `silence_rms_threshold` | `150` | int16 RMS. Calibrate with `test-mic`. Ignored while voice lock or noise suppression is on: speech detection decides instead |
 | `keep_mic_open` | `false` | `true` makes start instant but keeps the OS mic indicator on |
 | `input_device` | `""` | device name or index; empty means system default |
 | `noise_suppression` | `false` | on-device noise removal before STT. `enroll` turns it on |
