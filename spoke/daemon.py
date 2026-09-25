@@ -1,4 +1,5 @@
-"""The dictation pipeline: hotkey -> record -> STT -> filter -> cleanup -> vocab -> paste.
+"""The dictation pipeline: hotkey -> record (+ on-device voice filter) -> STT -> filter ->
+cleanup -> vocab -> paste.
 
 Recording runs on the hotkey thread (start must be < 50 ms); everything after key release
 runs on one worker thread so utterances are processed in order and the hotkey never blocks.
@@ -25,6 +26,7 @@ from .platform_info import CURRENT
 from .recorder import Recorder, Recording, rejection_reason, save_debug_audio
 from .transcribe import TranscriptionError, filter_hallucination, make_transcriber
 from .vocab import apply_replacements
+from .voice import VoiceFilter, VoiceSession
 
 log = logging.getLogger("spoke")
 
@@ -53,6 +55,7 @@ def setup_logging(cfg: Config, console: bool = True) -> None:
 @dataclass
 class Timings:
     record_s: float = 0.0
+    voice_ms: float = 0.0  # voice filter work left after key release
     stt_ms: float = 0.0
     cleanup_ms: float = 0.0
     paste_ms: float = 0.0
@@ -73,8 +76,10 @@ class Pipeline:
         injector: Injector | None,
         history: History | None,
         sounds: notify.Sounds | None = None,
+        voice: VoiceFilter | None = None,
     ):
         self.cfg = cfg
+        self.voice = voice or VoiceFilter(cfg)
         self.sounds = sounds or notify.Sounds(False)
         self.client = client
         self.transcriber = make_transcriber(cfg, client)
@@ -146,14 +151,53 @@ class Pipeline:
         text = apply_replacements(text, self.cfg.replacements)
         return text.strip(), info
 
-    def process(self, rec: Recording, released_at: float) -> str | None:
+    def apply_voice(self, rec: Recording, session: VoiceSession | None = None) -> tuple[Recording | None, dict]:
+        """Run the on-device voice filter. Returns (audio to send or None to drop, info).
+        A filter failure never costs a dictation: the unfiltered audio is sent instead."""
+        if session is not None:
+            res = session.finish()
+        else:
+            res = self.voice.process(rec.samples)  # whole recording at once (test-mic)
+            if res is None:
+                return rec, {}
+        info = {"voice": res.status, "voice_ms": res.tail_ms, "voice_kept_s": round(res.kept_s, 2),
+                "voice_detail": res.describe()}
+        log.debug("voice filter %s", info["voice_detail"])
+        if res.status == "error":
+            return rec, info
+        if res.status == "no-speech":
+            log.info("discarded recording: no speech detected")
+            return None, info
+        if res.status == "not-you":
+            best = res.best_score
+            log.info("discarded recording: didn't match your voice (best %.2f, need %.2f)", best or 0, self.voice.threshold)
+            notify.notify(
+                "Spoke: that didn't sound like you",
+                "Nothing was sent. If it was you, run `spoke enroll --add` where you usually dictate.",
+                self.cfg.notifications,
+            )
+            return None, info
+        return Recording(res.samples), info
+
+    def process(self, rec: Recording, released_at: float, session: VoiceSession | None = None) -> str | None:
         cfg = self.cfg
-        reason = rejection_reason(rec, cfg.min_seconds, cfg.silence_rms_threshold)
+        # With the voice filter on, its speech detector decides what is silence: a fixed RMS
+        # gate drops quiet-mic dictation before the filter ever hears it.
+        silence = 0.0 if self.voice.active else cfg.silence_rms_threshold
+        reason = rejection_reason(rec, cfg.min_seconds, silence)
         if reason:
+            if session is not None:
+                session.cancel()
             log.info("discarded recording: %s", reason)
             return None
         if cfg.debug_save_audio:
             log.debug("saved debug audio to %s", save_debug_audio(rec, spoke_home() / "debug_audio"))
+        if session is not None or self.voice.active:
+            rec, vinfo = self.apply_voice(rec, session)
+            if rec is None:
+                return None
+        else:
+            vinfo = {}
         try:
             text, info = self.text_for(rec)
         except TranscriptionError as e:
@@ -181,19 +225,21 @@ class Pipeline:
         visible = getattr(self.injector, "last_visible_at", 0.0) or time.perf_counter()
         t = Timings(
             record_s=rec.duration,
+            voice_ms=vinfo.get("voice_ms", 0.0),
             stt_ms=info["stt_ms"],
             cleanup_ms=info["cleanup_ms"],
             paste_ms=(visible - t_paste) * 1000,
             total_ms=(visible - released_at) * 1000,
         )
         log.debug(
-            "latency: audio=%.2fs stt=%.0fms cleanup=%.0fms(%s) paste=%.0fms total=%.0fms (release->text visible)",
-            t.record_s, t.stt_ms, t.cleanup_ms, info["cleanup"], t.paste_ms, t.total_ms,
+            "latency: audio=%.2fs voice=%.0fms stt=%.0fms cleanup=%.0fms(%s) paste=%.0fms total=%.0fms (release->text visible)",
+            t.record_s, t.voice_ms, t.stt_ms, t.cleanup_ms, info["cleanup"], t.paste_ms, t.total_ms,
         )
         if self.history:
             self.history.append(
                 raw=info["raw"], text=text, app=app, method=method, cleanup=info["cleanup"],
                 language=cfg.language, backend=cfg.effective_stt_backend, latency=t.as_dict(),
+                **({"voice": vinfo["voice"]} if vinfo else {}),
             )
         return final
 
@@ -213,7 +259,9 @@ class Daemon:
             restore_delay=cfg.paste_restore_delay_ms / 1000.0,
         )
         self.history = History(spoke_home() / "history.jsonl", cfg.history, int(cfg.history_max_mb * 1024 * 1024))
-        self.pipeline = Pipeline(cfg, self.client, self.injector, self.history, self.sounds)
+        self.voice = VoiceFilter(cfg)
+        self.pipeline = Pipeline(cfg, self.client, self.injector, self.history, self.sounds, voice=self.voice)
+        self._session: VoiceSession | None = None
         self.listener = HotkeyListener(
             cfg.hotkey, cfg.mode, self.on_action, cfg.toggle_double_tap_ms, is_injecting=lambda: self.injector.injecting
         )
@@ -233,6 +281,9 @@ class Daemon:
             with self._lock:
                 if self.recorder.is_recording:
                     self.recorder.cancel()
+                    if self._session is not None:
+                        self._session.cancel()
+                        self._session = None
                     log.info("recording cancelled (hotkey used in a key combo)")
             self._set_state()
 
@@ -242,8 +293,12 @@ class Daemon:
             if self.recorder.is_recording:
                 return
             try:
-                self.recorder.start()
+                self._session = self.voice.session()
+                self.recorder.start(sink=self._session.feed if self._session else None)
             except Exception as e:
+                if self._session is not None:
+                    self._session.cancel()
+                    self._session = None
                 self.listener.machine.reset()
                 notify.notify("Spoke: microphone error", str(e)[:200], self.cfg.notifications)
                 self.sounds.play("error")
@@ -259,10 +314,11 @@ class Daemon:
             if not self.recorder.is_recording:
                 return
             rec = self.recorder.stop()
+            session, self._session = self._session, None
             self._pending += 1
         self.sounds.play("stop")
         self._set_state("processing")
-        self._jobs.put((rec, released))
+        self._jobs.put((rec, released, session))
 
     def _on_max(self) -> None:
         self.listener.machine.reset()
@@ -277,11 +333,11 @@ class Daemon:
     def _worker(self) -> None:
         while not self._stop.is_set():
             try:
-                rec, released = self._jobs.get(timeout=0.5)
+                rec, released, session = self._jobs.get(timeout=0.5)
             except queue.Empty:
                 continue
             try:
-                self.pipeline.process(rec, released)
+                self.pipeline.process(rec, released, session)
             except Exception:
                 log.exception("pipeline crashed")
                 self.sounds.play("error")
@@ -307,6 +363,14 @@ class Daemon:
     def run(self) -> None:
         threading.Thread(target=self._worker, name="spoke-worker", daemon=True).start()
         self.recorder.warm()
+        if self.voice.problem:
+            log.warning("voice filter off: %s", self.voice.problem)
+            notify.notify("Spoke: voice lock is off", self.voice.problem[:200], self.cfg.notifications)
+        elif self.voice.active:
+            log.info("voice filter on: %s", ", ".join(
+                x for x, on in (("noise suppression", self.cfg.noise_suppression),
+                                (f"voice lock (threshold {self.voice.threshold:.2f})", self.voice.lock)) if on))
+        self.voice.warm()
         if self.client:
             # Also opens the TLS connection, so the first dictation starts warm; the
             # keepalive then stops it going cold between dictations.
