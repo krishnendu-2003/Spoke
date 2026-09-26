@@ -10,6 +10,31 @@ hold hotkey → record (16 kHz mono, in memory) → release → Groq Whisper (wh
 
 Target: under 1.5 s from key release to text on screen for a ~10 s utterance.
 
+## Mac app (no terminal needed)
+
+Spoke.app is a menu-bar app with Python and everything else bundled inside. Open it like any app: it shows the waveform in the menu bar and the hotkey works right away.
+
+1. **Download** the .dmg: `Spoke-<version>-arm64.dmg` for Apple Silicon (M1 and later) or `-x86_64` for Intel. It is on the [Releases](https://github.com/krishnendu-2003/Spoke/releases) page for tagged versions, and under **Artifacts** on any green run of the [macos-app workflow](https://github.com/krishnendu-2003/Spoke/actions/workflows/macos-app.yml).
+2. **Install:** open the .dmg and drag Spoke onto Applications.
+3. **One time only:** the app isn't signed with a paid Apple Developer ID, so macOS blocks it the first time. In Terminal run
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Spoke.app
+   ```
+   Or double-click it once, then go to System Settings > Privacy & Security and click **Open Anyway**.
+4. **Open Spoke.** The first launch walks you through, in dialogs:
+   - your Groq key (skipped if the Keychain already has one; macOS may ask once to let Spoke read it, so click **Always Allow**)
+   - Microphone, Accessibility and Input Monitoring, granted to **Spoke** itself rather than a terminal or Python
+   - voice lock enrollment (optional, 6 sentences)
+   - opening at login (optional)
+
+The waveform menu has Voice lock on/off, Re-record my voice, Groq API key, Check permissions, Open settings file, Open log, Open at login and Quit. Settings, history and the voiceprint stay in `~/.spoke`, shared with the terminal version. If the terminal version is running or set to start at login, the app offers to turn it off, because two copies would type every dictation twice.
+
+The bundle's binary also takes every CLI command, e.g. `/Applications/Spoke.app/Contents/MacOS/Spoke doctor`.
+
+**After installing a newer build**, macOS may treat it as a different app, because an unsigned app's identity is its exact code. If the hotkey or paste stops working, open Check permissions from the menu, or switch Spoke off and on again under Privacy & Security.
+
+Build it yourself on a Mac: `pip install -r requirements.txt -r packaging/macos/requirements-build.txt`, then `packaging/macos/build.sh`, which writes `dist/Spoke.app` and `dist/Spoke-<version>-<arch>.dmg`.
+
 ## Install (4 commands)
 
 You need Python 3.11+ and a Groq API key (https://console.groq.com/keys).
@@ -88,7 +113,7 @@ The denoised copy is only used to find and match your speech. What goes to Groq 
 
 ## Permissions you must grant by hand
 
-**macOS.** Open System Settings > Privacy & Security and enable Spoke in each of these:
+**macOS.** Open System Settings > Privacy & Security and enable Spoke in each of these (Spoke.app asks for them itself and does not need the terminal/Python steps below):
 
 | Permission | Why |
 |---|---|
@@ -201,7 +226,8 @@ On macOS, also remove the terminal or Python entries you added under Privacy & S
 - Command mode: rewrite selected text by voice
 - Per-app tone profiles
 - Streaming partial transcripts
-- Packaged `.app` / `.exe` (would also make macOS permissions attach to "Spoke" instead of Python)
+- Packaged Windows `.exe`
+- Developer ID signing and notarization for Spoke.app (no quarantine step, and permissions that survive updates)
 - Snippets / text expansion
 
 ## Development
@@ -212,4 +238,4 @@ On macOS, also remove the terminal or Python entries you added under Privacy & S
 SPOKE_NATIVE_TESTS=1 .venv/bin/python -m pytest tests/test_clipboard_native.py   # real clipboard round trip (clobbers yours)
 ```
 
-CI runs the tests on macOS, Windows and Linux (under Xvfb) with Python 3.11 and 3.13, including the real-clipboard test, and runs `doctor` for its informational output.
+CI runs the tests on macOS, Windows and Linux (under Xvfb) with Python 3.11 and 3.13, including the real-clipboard test, and runs `doctor` for its informational output. The `macos-app` workflow builds Spoke.app for Apple Silicon and Intel, runs `--self-test` inside the bundle (native libraries, Keychain backend, voice models), launches it once, and uploads the .dmg.

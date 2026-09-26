@@ -37,6 +37,14 @@ def cmd_run(args) -> int:
     if cfg.effective_stt_backend == "groq" and not key:
         print(f"No Groq API key found. Run `{spoke_cmd('setup')}` (or set GROQ_API_KEY).", file=sys.stderr)
         return 2
+    from . import instance
+
+    lock = instance.acquire()  # noqa: F841 -- held for the life of the process
+    if lock is None:
+        pid = instance.holder_pid()
+        print(f"Spoke is already running{f' (pid {pid})' if pid else ''}. Quit it first: two copies "
+              "would paste every dictation twice.", file=sys.stderr)
+        return 1
     bad = [c for c in run_checks() if c.ok is False]
     if bad:
         print("Spoke may not work until these are fixed:\n" + format_checks(bad), file=sys.stderr)

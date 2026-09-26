@@ -28,6 +28,8 @@ def spoke_cmd(args: str = "") -> str:
     exe = sys.executable or "python"
     if " " in exe:
         exe = f'"{exe}"'
+    if getattr(sys, "frozen", False):  # Spoke.app: the bundle's own binary takes the same commands
+        return exe + (f" {args}" if args else "")
     return f"{exe} -m spoke" + (f" {args}" if args else "")
 
 

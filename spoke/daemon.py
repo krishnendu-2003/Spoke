@@ -266,6 +266,8 @@ class Daemon:
             cfg.hotkey, cfg.mode, self.on_action, cfg.toggle_double_tap_ms, is_injecting=lambda: self.injector.injecting
         )
         self.tray = None
+        self.menu_items: list = []  # extra tray entries (the macOS app adds its own)
+        self.paused = False  # hotkey ignored (e.g. while the app records an enrollment)
         self._jobs: queue.Queue = queue.Queue()
         self._lock = threading.Lock()
         self._pending = 0
@@ -273,6 +275,9 @@ class Daemon:
 
     # --- hotkey actions (listener thread) ---
     def on_action(self, action: str) -> None:
+        if self.paused and action == START:
+            self.listener.machine.reset()
+            return
         if action == START:
             self._start()
         elif action == STOP:
@@ -383,7 +388,8 @@ class Daemon:
             from . import tray as tray_mod
 
             self.tray = tray_mod.try_create(
-                "Spoke", self.quit, self._open_history, level=lambda: self.recorder.level
+                "Spoke", self.quit, self._open_history, level=lambda: self.recorder.level,
+                extra_items=self.menu_items,
             )
         if self.tray:
             notify.set_tray_notifier(self.tray.notify)
