@@ -1,6 +1,6 @@
 import plistlib
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from spoke import app, config, instance
 
@@ -20,7 +20,7 @@ def test_clean_argv_drops_finder_psn():
 
 
 def test_login_plist_opens_the_app_through_launchservices():
-    d = plistlib.loads(app.login_plist(Path("/Applications/Spoke.app")))
+    d = plistlib.loads(app.login_plist(PurePosixPath("/Applications/Spoke.app")))
     assert d["Label"] == app.LOGIN_LABEL
     assert d["ProgramArguments"] == ["/usr/bin/open", "-a", "/Applications/Spoke.app"]
     assert d["RunAtLoad"] is True
@@ -37,7 +37,7 @@ def test_set_login_roundtrip(tmp_path, monkeypatch):
 
 
 def test_relaunch_command():
-    cmd = app.relaunch_command(Path("/Applications/Spoke.app"))
+    cmd = app.relaunch_command(PurePosixPath("/Applications/Spoke.app"))
     assert cmd[-1] == "/Applications/Spoke.app" and "open -n" in cmd[2]
     assert app.relaunch_command(None)[1:] == ["-m", "spoke.app"]
 
