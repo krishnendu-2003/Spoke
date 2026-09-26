@@ -18,6 +18,9 @@ class Check:
 
 
 def _mac_binary_note() -> str:
+    if getattr(sys, "frozen", False):
+        return ("Turn on \"Spoke\" in that list (use + and pick Spoke in Applications if it isn't\n"
+                "      there), then quit and reopen Spoke.")
     exe = os.path.realpath(sys.executable)
     parent = os.environ.get("TERM_PROGRAM") or os.environ.get("__CFBundleIdentifier") or ""
     who = f"your terminal app ({parent})" if parent else "your terminal app"

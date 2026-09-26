@@ -76,7 +76,10 @@ class Tray:
         on_quit: Callable[[], None],
         on_open_history: Callable[[], None] | None = None,
         level: Callable[[], float] = lambda: 0.0,
+        extra_items: list | None = None,
     ):
+        """extra_items: (label, action, checked) tuples shown above Quit; label None is a
+        separator, checked is None or a callable returning whether to show a tick."""
         import pystray
 
         self._pystray = pystray
@@ -87,7 +90,15 @@ class Tray:
         items = [pystray.MenuItem(lambda _i: f"Spoke: {self.state}", None, enabled=False)]
         if on_open_history:
             items.append(pystray.MenuItem("Show history file", lambda _i, _it: on_open_history()))
-        items.append(pystray.MenuItem("Quit", lambda _i, _it: on_quit()))
+        for label, action, checked in extra_items or []:
+            if label is None:
+                items.append(pystray.Menu.SEPARATOR)
+                continue
+            items.append(pystray.MenuItem(
+                label, (lambda fn: lambda _i, _it: fn())(action),
+                checked=(lambda fn: lambda _it: bool(fn()))(checked) if checked else None,
+            ))
+        items.append(pystray.MenuItem("Quit Spoke" if extra_items else "Quit", lambda _i, _it: on_quit()))
         self.icon = pystray.Icon("spoke", render(IDLE_HEIGHTS), title, pystray.Menu(*items))
 
     # --- frame output ---
@@ -170,12 +181,13 @@ class Tray:
             pass
 
 
-def try_create(title: str, on_quit, on_open_history=None, level: Callable[[], float] = lambda: 0.0) -> Tray | None:
+def try_create(title: str, on_quit, on_open_history=None, level: Callable[[], float] = lambda: 0.0,
+               extra_items: list | None = None) -> Tray | None:
     # With no system tray to dock into (e.g. GNOME without the AppIndicator extension)
     # pystray logs a traceback on every icon update; the icon is optional, so keep it quiet.
     logging.getLogger("pystray").setLevel(logging.CRITICAL)
     try:
-        return Tray(title, on_quit, on_open_history, level)
+        return Tray(title, on_quit, on_open_history, level, extra_items)
     except Exception as e:
         log.info("tray unavailable (%s); running without an icon", e)
         return None

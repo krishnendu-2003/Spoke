@@ -1,0 +1,74 @@
+name: macos-app
+# Builds Spoke.app + a .dmg on real Macs, checks the bundle actually works, and uploads the .dmg.
+# Download it from the run's "Artifacts" section; tags (v*) also attach it to a GitHub release.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14        # Apple Silicon (M1 and later)
+            arch: arm64
+          - runner: macos-15-intel  # Intel Macs
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -r requirements.txt -r packaging/macos/requirements-build.txt
+      - name: Build Spoke.app and .dmg
+        run: PYTHON=python packaging/macos/build.sh
+      - name: Self-test the bundle (native libs, Keychain backend, voice models)
+        env:
+          SPOKE_HOME: ${{ runner.temp }}/spoke-home
+        run: |
+          APP=dist/Spoke.app/Contents/MacOS/Spoke
+          "$APP" --version
+          "$APP" enroll --download-only      # the bundle's own HTTPS + certificates
+          "$APP" --self-test
+          "$APP" doctor || true              # informational: no key, mic or permissions on CI
+      - name: Launch the app (first-run dialog must come up without crashing)
+        # Launched through LaunchServices like a double-click, so it uses the runner's ~/.spoke.
+        run: |
+          open -n dist/Spoke.app
+          sleep 20
+          if pgrep -f "Spoke.app/Contents/MacOS/Spoke" >/dev/null; then
+            echo "Spoke.app is running (waiting on the Groq key dialog)."
+            pkill -f "Spoke.app/Contents/MacOS/Spoke" || true
+          else
+            echo "Spoke.app exited on launch"; cat "$HOME/.spoke/spoke.log" 2>/dev/null || true; exit 1
+          fi
+          if grep -q Traceback "$HOME/.spoke/spoke.log" 2>/dev/null; then cat "$HOME/.spoke/spoke.log"; exit 1; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Spoke-macOS-${{ matrix.arch }}
+          path: dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dmg
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dmg/*.dmg
