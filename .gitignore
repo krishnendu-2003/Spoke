@@ -11,3 +11,23 @@ debug_audio/
 # app build output (packaging/macos/build.sh)
 /build/
 /dist/
+
+# secrets and local environment (Spoke keeps the API key in the OS keychain, never in files)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+
+# personal data that must never be committed
+history.jsonl
+voiceprint.json
+*.wav
+*.flac
+
+# editors and tools
+.idea/
+.vscode/
+.ruff_cache/
+.coverage
+htmlcov/

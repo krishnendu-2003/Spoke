@@ -54,11 +54,11 @@ def make(tmp_path, groq, **cfg_kw):
 
 
 def test_full_path_cleanup_then_replacements(tmp_path, no_app):
-    groq = FakeGroq("um we store balances in tiger beetle you know", "We store balances in tiger beetle.")
+    groq = FakeGroq("um we store rows in postgre sql you know", "We store rows in postgre sql.")
     p, inj = make(tmp_path, groq)
     out = p.process(speech(), released_at=0)
-    assert inj.injected == ["We store balances in TigerBeetle."]
-    assert out == "We store balances in TigerBeetle."
+    assert inj.injected == ["We store rows in PostgreSQL."]
+    assert out == "We store rows in PostgreSQL."
     entry = p.history.recent(1)[0]
     assert entry["raw"].startswith("um we store") and "latency" in entry
     assert "audio" not in entry

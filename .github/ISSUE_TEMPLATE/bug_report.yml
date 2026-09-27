@@ -1,0 +1,47 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Never paste your Groq API key.** Don't attach
+        `~/.spoke/history.jsonl` (your dictated text) or recordings from `~/.spoke/debug_audio/`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Hold Right Option\n2. Say ...\n3. ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Spoke?
+      options:
+        - Spoke.app (.dmg)
+        - From source (python -m spoke)
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and version
+      placeholder: macOS 15.5 (Apple Silicon) / Windows 11 / Ubuntu 24.04 (X11)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Spoke version (`python -m spoke --version`)
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `python -m spoke doctor`
+      render: text

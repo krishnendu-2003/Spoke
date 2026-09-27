@@ -1,5 +1,10 @@
 # Spoke
 
+[![ci](https://github.com/krishnendu-2003/Spoke/actions/workflows/ci.yml/badge.svg)](https://github.com/krishnendu-2003/Spoke/actions/workflows/ci.yml)
+[![security](https://github.com/krishnendu-2003/Spoke/actions/workflows/security.yml/badge.svg)](https://github.com/krishnendu-2003/Spoke/actions/workflows/security.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/krishnendu-2003/Spoke/badge)](https://scorecard.dev/viewer/?uri=github.com/krishnendu-2003/Spoke)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Personal push-to-talk dictation. Hold a key anywhere, speak, release, and cleaned-up text is pasted into whatever has focus. Your clipboard is put back afterwards.
 
 ```
@@ -189,7 +194,7 @@ Each assumption made without asking, with its trade-off:
 5. **"Trailing space" means a separator space before the next paste.** When you dictate into the same app within 30 s, the new text starts with a space. The result is the same as a trailing space, but a single dictation never leaves a dangling space. The rule is skipped if the text starts with punctuation.
 6. **Hold-mode chord cancel.** Right Ctrl is also a real modifier, so pressing another key while holding it cancels the recording. Otherwise every Right-Ctrl shortcut would start a dictation.
 7. **Hallucination blocklist is conservative.** It drops "Thanks for watching", a lone "you", and subtitle credits. It deliberately does *not* drop "Thank you." or "Okay.", because you might really dictate those. Silence is caught first by the RMS gate, so the blocklist is a second line of defence. Whisper can also read the vocab prompt back on unclear audio, so the prompt is a bare term list with no label word, and a transcript that is at least 75% vocab words (3+ words) is dropped as an echo.
-8. **`stellar` is in `vocab` but not in `replacements`.** Otherwise "a stellar result" would become "a Stellar result". The same reasoning applies to other common English words, so add them only if Whisper keeps getting them wrong.
+8. **`Swift` is in `vocab` but not in `replacements`.** Otherwise "a swift reply" would become "a Swift reply". The same reasoning applies to other common English words, so add them only if Whisper keeps getting them wrong.
 9. **Mic opens on key-down by default** (`keep_mic_open = false`). An always-open stream would keep the macOS/Windows mic indicator on all day. The time it takes to open the stream is logged at DEBUG. If it is over 50 ms on your machine, set `keep_mic_open = true`.
 10. **Linux terminals.** Terminals paste with Ctrl+Shift+V, so Spoke reads the focused window's `WM_CLASS` (X11) and switches the chord. xterm/urxvt/st have no clipboard paste chord, so use `paste_method = "type"` for them.
 11. **Linux autostart uses XDG autostart**, not a systemd user unit. It runs inside the graphical session, so the display variables and keyring are always there.
@@ -239,3 +244,13 @@ SPOKE_NATIVE_TESTS=1 .venv/bin/python -m pytest tests/test_clipboard_native.py  
 ```
 
 CI runs the tests on macOS, Windows and Linux (under Xvfb) with Python 3.11 and 3.13, including the real-clipboard test, and runs `doctor` for its informational output. The `macos-app` workflow builds Spoke.app for Apple Silicon and Intel, runs `--self-test` inside the bundle (native libraries, Keychain backend, voice models), launches it once, and uploads the .dmg.
+
+The `security` workflow scans the full git history for secrets (gitleaks) and audits every pinned requirement for known vulnerabilities (pip-audit), weekly as well as on each change. `codeql` runs GitHub's security queries over the Python code and the workflows, and `scorecard` grades the repository's supply-chain practices. Actions are pinned to commit SHAs, and Dependabot keeps them and the Python pins current. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, including `ruff check .` and the optional pre-commit hooks.
+
+## Security
+
+Please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). It also lists exactly what Spoke stores and what leaves your machine.
+
+## License
+
+[MIT](LICENSE). Contributions are welcome under the same license; see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -1,0 +1,22 @@
+# Lint for bugs and security smells, not style. Run: ruff check .
+target-version = "py311"
+
+[lint]
+select = [
+    "E9",  # syntax errors
+    "F",   # pyflakes: undefined names, unused imports
+    "B",   # bugbear: likely bugs
+    "S",   # bandit: security smells
+]
+ignore = [
+    "S101",  # assert is fine; the app never relies on asserts for security checks
+    "S603",  # subprocess with an argument list (never shell=True) is intended
+    "S606",
+    "S607",  # osascript / xdotool / xclip are resolved from PATH on purpose
+    "S110",  # best-effort UI and permission probes swallow errors deliberately
+    "B023",  # closures in the enrollment loop run within the same iteration
+    "B905",  # zip() over arrays of equal length by construction
+]
+
+[lint.per-file-ignores]
+"tests/**" = ["B008", "S105", "S106", "S108"]

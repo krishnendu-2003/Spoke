@@ -7,7 +7,7 @@ import string
 from functools import lru_cache
 
 # Whisper's prompt limit is 224 tokens (Groq docs). Proper nouns tokenize badly
-# ("TigerBeetle" ~ 4 tokens), so estimate conservatively and keep a margin.
+# ("PostgreSQL" ~ 4 tokens), so estimate conservatively and keep a margin.
 WHISPER_PROMPT_TOKEN_LIMIT = 224
 PROMPT_TOKEN_BUDGET = 200
 
