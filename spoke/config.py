@@ -42,46 +42,36 @@ def config_path() -> Path:
     return spoke_home() / "config.toml"
 
 
+# Starter vocabulary: developer terms Whisper often gets wrong. Replace it with your own names,
+# products and jargon in ~/.spoke/config.toml (most important first).
 SEED_VOCAB = [
-    "Lumeo", "TigerBeetle", "Soroban", "Stellar", "NestJS", "Prisma", "Next.js", "FastAPI",
-    "Turborepo", "pnpm", "BullMQ", "Supabase", "Setu", "FIRA", "ITR-4", "ERI",
-    "Krishnendu", "Kolkata",
+    "GitHub", "TypeScript", "JavaScript", "Python", "Swift", "Kubernetes", "PostgreSQL",
+    "Next.js", "FastAPI", "pnpm", "Supabase", "Groq", "Whisper",
 ]
 
 # Spoken / mis-heard form -> canonical form. Matched case-insensitively on word boundaries,
 # applied AFTER cleanup. Keys are lowercase.
 SEED_REPLACEMENTS = {
-    "lumeo": "Lumeo",
-    "lumio": "Lumeo",
-    "tiger beetle": "TigerBeetle",
-    "tigerbeetle": "TigerBeetle",
-    "soroban": "Soroban",
-    "nest js": "NestJS",
-    "nestjs": "NestJS",
-    "prisma": "Prisma",
+    "git hub": "GitHub",
+    "github": "GitHub",
+    "type script": "TypeScript",
+    "typescript": "TypeScript",
+    "java script": "JavaScript",
+    "javascript": "JavaScript",
+    "kubernetes": "Kubernetes",
+    "postgres ql": "PostgreSQL",
+    "postgre sql": "PostgreSQL",
+    "postgresql": "PostgreSQL",
     "next js": "Next.js",
     "nextjs": "Next.js",
     "next.js": "Next.js",
     "fast api": "FastAPI",
     "fastapi": "FastAPI",
-    "turbo repo": "Turborepo",
-    "turborepo": "Turborepo",
     "p npm": "pnpm",
-    "bull mq": "BullMQ",
-    "bullmq": "BullMQ",
     "supabase": "Supabase",
     "super base": "Supabase",
     "supa base": "Supabase",
     "sopabase": "Supabase",  # heard on a real Mac test, 2026-09-25
-    "tiger beatle": "TigerBeetle",
-    "setu": "Setu",
-    "fira": "FIRA",
-    "itr 4": "ITR-4",
-    "itr-4": "ITR-4",
-    "itr four": "ITR-4",
-    "eri": "ERI",
-    "krishnendu": "Krishnendu",
-    "kolkata": "Kolkata",
 }
 
 # Whisper output that shows up on silent / near-silent audio. Deliberately excludes phrases

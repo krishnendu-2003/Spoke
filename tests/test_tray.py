@@ -1,5 +1,5 @@
 from spoke.recorder import block_level, smooth_level
-from spoke.tray import IDLE_HEIGHTS, MIN_H, N_BARS, bar_heights, render
+from spoke.tray import IDLE_HEIGHTS, MIN_H, bar_heights, render
 
 import numpy as np
 

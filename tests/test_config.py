@@ -30,11 +30,10 @@ def test_defaults_match_spec():
     assert cfg.history is True
     assert cfg.debug_save_audio is False
     assert cfg.trailing_space is True
-    for term in ["Lumeo", "TigerBeetle", "Soroban", "Stellar", "NestJS", "Prisma", "Next.js",
-                 "FastAPI", "Turborepo", "pnpm", "BullMQ", "Supabase", "Setu", "FIRA", "ITR-4",
-                 "ERI", "Krishnendu", "Kolkata"]:
+    for term in ["GitHub", "TypeScript", "Kubernetes", "PostgreSQL", "Next.js", "FastAPI",
+                 "pnpm", "Supabase"]:
         assert term in cfg.vocab
-    assert cfg.replacements["tiger beetle"] == "TigerBeetle"
+    assert cfg.replacements["type script"] == "TypeScript"
     assert "thanks for watching" in cfg.hallucination_blocklist
 
 

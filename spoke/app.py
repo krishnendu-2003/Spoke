@@ -226,7 +226,7 @@ class UI:
     def pump(self, seconds: float) -> None:
         """Handle window events for a while (we may be outside NSApp.run())."""
         AK, F = self.AppKit, self.Foundation
-        mask = getattr(AK, "NSEventMaskAny", None) or getattr(AK, "NSAnyEventMask")
+        mask = getattr(AK, "NSEventMaskAny", None) or AK.NSAnyEventMask
         end = time.monotonic() + seconds
         while (left := end - time.monotonic()) > 0:
             ev = self.app.nextEventMatchingMask_untilDate_inMode_dequeue_(
