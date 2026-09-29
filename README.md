@@ -258,7 +258,7 @@ Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the full guide
    - others: `docs/...`, `test/...`, `refactor/...`, `perf/...`, `ci/...`, `chore/...`
 3. **Write commit messages and the PR title as [Conventional Commits](https://www.conventionalcommits.org)**, with the same type: `feat: add voice commands for punctuation`, `fix(inject): restore RTF clipboard on Windows`. Use the imperative, lowercase, no full stop. Add `!` for a breaking change (`feat(config)!: ...`).
 4. **One change per pull request**, with tests. A bug fix includes a test that fails without it.
-5. **Run `python -m pytest -q` and `ruff check .` before pushing.** CI also runs the tests on macOS, Windows and Linux, the secret scan, the dependency audit, CodeQL and a `naming` check on the branch name and PR title. Everything must be green, and the maintainer reviews every PR before it is merged.
+5. **Run `python -m pytest -q` and `ruff check .` before pushing.** CI also runs the tests on macOS, Windows and Linux, the secret scan, the dependency audit and CodeQL. Everything must be green, and the maintainer reviews every PR before it is merged.
 6. **Never commit secrets or personal data**: no API keys, `.env` files, recordings, dictation history or `~/.spoke` contents.
 7. **Pin new dependencies** to an exact version in the right `requirements*.txt`, with a comment saying why.
 
