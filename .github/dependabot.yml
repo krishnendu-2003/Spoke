@@ -8,6 +8,9 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope   # "chore(deps): bump ..." to match the naming check
     groups:
       python-minor-and-patch:
         update-types: [minor, patch]
@@ -15,6 +18,9 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope   # "ci(deps): bump ..."
     groups:
       actions:
         patterns: ["*"]
