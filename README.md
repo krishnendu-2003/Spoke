@@ -247,6 +247,23 @@ CI runs the tests on macOS, Windows and Linux (under Xvfb) with Python 3.11 and 
 
 The `security` workflow scans the full git history for secrets (gitleaks) and audits every pinned requirement for known vulnerabilities (pip-audit), weekly as well as on each change. `codeql` runs GitHub's security queries over the Python code and the workflows, and `scorecard` grades the repository's supply-chain practices. Actions are pinned to commit SHAs, and Dependabot keeps them and the Python pins current. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local setup, including `ruff check .` and the optional pre-commit hooks.
 
+## Contributing
+
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) has the full guide; the rules in short:
+
+1. **Open an issue first** for anything bigger than a small fix, so the approach is agreed before you write code.
+2. **Branch off `main`** and name the branch `<type>/<short-description>`, lowercase with hyphens:
+   - a new feature: `feat/voice-commands`
+   - a bug fix: `fix/clipboard-restore-windows` (or `fix/42-tray-crash` with the issue number)
+   - others: `docs/...`, `test/...`, `refactor/...`, `perf/...`, `ci/...`, `chore/...`
+3. **Write commit messages and the PR title as [Conventional Commits](https://www.conventionalcommits.org)**, with the same type: `feat: add voice commands for punctuation`, `fix(inject): restore RTF clipboard on Windows`. Use the imperative, lowercase, no full stop. Add `!` for a breaking change (`feat(config)!: ...`).
+4. **One change per pull request**, with tests. A bug fix includes a test that fails without it.
+5. **Run `python -m pytest -q` and `ruff check .` before pushing.** CI also runs the tests on macOS, Windows and Linux, the secret scan, the dependency audit and CodeQL. Everything must be green, and the maintainer reviews every PR before it is merged.
+6. **Never commit secrets or personal data**: no API keys, `.env` files, recordings, dictation history or `~/.spoke` contents.
+7. **Pin new dependencies** to an exact version in the right `requirements*.txt`, with a comment saying why.
+
+By contributing you agree to the [Code of Conduct](CODE_OF_CONDUCT.md) and to license your work under the [MIT License](LICENSE).
+
 ## Security
 
 Please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). It also lists exactly what Spoke stores and what leaves your machine.
