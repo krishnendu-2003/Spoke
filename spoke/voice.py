@@ -636,7 +636,7 @@ ENROLL_PROMPTS = [
     "The quick brown fox jumps over the lazy dog, and then it runs back home.",
     "Please move the deploy to six tomorrow and ping me on Slack when it's done.",
     "I'll send the invoice after lunch, so remind me on Thursday if I forget.",
-    "Honestly the weather in Kolkata has been really humid for the last few weeks.",
+    "Honestly the weather here has been really humid for the last few weeks.",
     "Open the settings page, turn on the dark theme, and save the changes.",
     "We should run the reconciliation job before the tax calculation step.",
     "My number ends in four seven two, and my email is on the website.",
